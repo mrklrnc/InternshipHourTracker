@@ -1,0 +1,11 @@
+@InternshipHoursTracker_HostAddress = http://localhost:5045
+
+GET {{InternshipHoursTracker_HostAddress}}/api/users
+Accept: application/json
+
+###
+
+GET {{InternshipHoursTracker_HostAddress}}/api/timelogs
+Accept: application/json
+
+###

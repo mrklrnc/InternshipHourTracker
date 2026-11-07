@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/frontend/">
+    <File Path="frontend/index.html" />
+    <File Path="frontend/package.json" />
+    <File Path="frontend/vite.config.js" />
+  </Folder>
+  <Folder Name="/frontend/src/">
+    <File Path="frontend/src/App.jsx" />
+    <File Path="frontend/src/index.css" />
+    <File Path="frontend/src/main.jsx" />
+  </Folder>
+  <Project Path="InternshipHoursTracker/InternshipHoursTracker.csproj" />
+</Solution>
