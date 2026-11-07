@@ -360,39 +360,41 @@ export default function App() {
         {logs.length === 0 ? (
           <p className="empty-state">No time logs recorded yet. Click "Morning Time In" or add a session above!</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Session</th>
-                <th>Time In</th>
-                <th>Time Out</th>
-                <th>Hours Logged</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map(log => (
-                <tr key={log.id}>
-                  <td>{new Date(log.timeIn).toLocaleDateString()}</td>
-                  <td>
-                    <span className="session-pill">
-                      {log.sessionType || (log.deductLunchBreak ? 'Full Day (-1h Lunch)' : 'Session')}
-                    </span>
-                  </td>
-                  <td>{new Date(log.timeIn).toLocaleTimeString()}</td>
-                  <td>{log.timeOut ? new Date(log.timeOut).toLocaleTimeString() : <em>In progress...</em>}</td>
-                  <td>
-                    <strong>{log.hoursLogged} hrs</strong>
-                    {log.deductLunchBreak && <span className="lunch-note"> (-1h lunch)</span>}
-                  </td>
-                  <td>
-                    <button className="delete-btn" onClick={() => handleDeleteLog(log.id)}>Delete</button>
-                  </td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Session</th>
+                  <th>Time In</th>
+                  <th>Time Out</th>
+                  <th>Hours Logged</th>
+                  <th>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {logs.map(log => (
+                  <tr key={log.id}>
+                    <td>{new Date(log.timeIn).toLocaleDateString()}</td>
+                    <td>
+                      <span className="session-pill">
+                        {log.sessionType || (log.deductLunchBreak ? 'Full Day (-1h Lunch)' : 'Session')}
+                      </span>
+                    </td>
+                    <td>{new Date(log.timeIn).toLocaleTimeString()}</td>
+                    <td>{log.timeOut ? new Date(log.timeOut).toLocaleTimeString() : <em>In progress...</em>}</td>
+                    <td>
+                      <strong>{log.hoursLogged} hrs</strong>
+                      {log.deductLunchBreak && <span className="lunch-note"> (-1h lunch)</span>}
+                    </td>
+                    <td>
+                      <button className="delete-btn" onClick={() => handleDeleteLog(log.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
