@@ -1,37 +1,107 @@
+using System.Threading.RateLimiting;
 using InternshipHoursTracker.Models;
 using InternshipHoursTracker.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// ==========================================
+// 1. DATABASE & EMAIL CONFIGURATION
+// ==========================================
 builder.Services.Configure<MongoDBSettings>(
     builder.Configuration.GetSection("MongoDBSettings"));
 
-builder.Services.AddSingleton<MongoDbService>();
+builder.Services.Configure<BrevoSettings>(
+    builder.Configuration.GetSection("BrevoSettings"));
 
+// ==========================================
+// 2. IN-MEMORY CACHING & SERVICES
+// ==========================================
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<MongoDbService>();
+builder.Services.AddHttpClient<EmailService>();
+
+// ==========================================
+// 3. PRODUCTION CORS POLICY
+// ==========================================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
+    options.AddPolicy("ProductionCors", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.WithOrigins(
+                    "https://internship-hour-tracker.vercel.app",
+                    "http://localhost:5173",
+                    "http://localhost:3000")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.WithOrigins("https://internship-hour-tracker.vercel.app")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        }
     });
 });
 
+// ==========================================
+// 4. JWT BEARER AUTHENTICATION & AUTHORIZATION
+// ==========================================
+builder.Services.AddAuthentication(JwtHelper.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, JwtBearerAuthHandler>(JwtHelper.SchemeName, null);
+
+builder.Services.AddAuthorization();
+
+// ==========================================
+// 5. RATE LIMITING (10 req / minute per IP)
+// ==========================================
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            message = "Too many requests. Please wait a minute before trying again."
+        }, cancellationToken);
+    };
+
+    options.AddPolicy("StrictPolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+});
+
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// ==========================================
+// HTTP REQUEST PIPELINE
+// ==========================================
 app.MapOpenApi();
 
-app.UseCors("AllowFrontend");
+app.UseCors("ProductionCors");
+
+app.UseRateLimiter();
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/", () => Results.Content("""

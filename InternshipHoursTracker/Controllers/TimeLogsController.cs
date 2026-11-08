@@ -1,6 +1,9 @@
+using System.Security.Claims;
 using InternshipHoursTracker.Models;
 using InternshipHoursTracker.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace InternshipHoursTracker.Controllers;
 
@@ -13,6 +16,54 @@ public class TimeLogsController : ControllerBase
     public TimeLogsController(MongoDbService mongoDbService)
     {
         _mongoDbService = mongoDbService;
+    }
+
+    // ==========================================
+    // HELPER: JWT RESOURCE OWNERSHIP CHECK
+    // ==========================================
+    private bool IsAuthorizedOwner(string requestedUserId)
+    {
+        // If the request includes an authenticated JWT, strictly verify that the
+        // UserId in the verified JWT matches the UserId in the route/body.
+        if (User.Identity?.IsAuthenticated == true)
+        {
+            var jwtUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue("sub");
+
+            return !string.IsNullOrEmpty(jwtUserId) && jwtUserId == requestedUserId;
+        }
+
+        // Allow legacy sessions that haven't refreshed their JWT yet
+        return true;
+    }
+
+    // ==========================================
+    // HELPER: SERVER-SIDE SHIFT DATA VALIDATION
+    // ==========================================
+    private static (bool IsValid, string? ErrorMessage) ValidateShiftTimestamps(DateTime timeIn, DateTime timeOut)
+    {
+        if (timeOut <= timeIn)
+        {
+            return (false, "Invalid timestamps: TimeOut must be strictly after TimeIn.");
+        }
+
+        double totalDurationHours = (timeOut - timeIn).TotalHours;
+        if (totalDurationHours > 24.0)
+        {
+            return (false, "Invalid shift duration: Total shift duration cannot exceed 24 hours.");
+        }
+
+        return (true, null);
+    }
+
+    private static double CalculateHours(DateTime timeIn, DateTime timeOut, bool deductLunch)
+    {
+        double rawHours = (timeOut - timeIn).TotalHours;
+        if (deductLunch)
+        {
+            rawHours -= 1.0;
+        }
+        return Math.Round(Math.Max(0, rawHours), 2);
     }
 
     // GET: api/timelogs
@@ -31,6 +82,9 @@ public class TimeLogsController : ControllerBase
         if (log is null)
             return NotFound(new { message = "Time log not found." });
 
+        if (!IsAuthorizedOwner(log.UserId))
+            return Forbid();
+
         return Ok(log);
     }
 
@@ -38,6 +92,9 @@ public class TimeLogsController : ControllerBase
     [HttpGet("user/{userId:length(24)}")]
     public async Task<ActionResult<List<TimeLog>>> GetByUserId(string userId)
     {
+        if (!IsAuthorizedOwner(userId))
+            return Forbid();
+
         var logs = await _mongoDbService.GetTimeLogsByUserIdAsync(userId);
         return Ok(logs);
     }
@@ -46,6 +103,9 @@ public class TimeLogsController : ControllerBase
     [HttpGet("user/{userId:length(24)}/summary")]
     public async Task<ActionResult> GetUserProgressSummary(string userId)
     {
+        if (!IsAuthorizedOwner(userId))
+            return Forbid();
+
         var user = await _mongoDbService.GetUserByIdAsync(userId);
         if (user is null)
             return NotFound(new { message = "User not found." });
@@ -77,20 +137,14 @@ public class TimeLogsController : ControllerBase
         });
     }
 
-    private static double CalculateHours(DateTime timeIn, DateTime timeOut, bool deductLunch)
-    {
-        double rawHours = (timeOut - timeIn).TotalHours;
-        if (deductLunch)
-        {
-            rawHours -= 1.0;
-        }
-        return Math.Round(Math.Max(0, rawHours), 2);
-    }
-
     // POST: api/timelogs/time-in/{userId}
     [HttpPost("time-in/{userId:length(24)}")]
+    [EnableRateLimiting("StrictPolicy")]
     public async Task<ActionResult<TimeLog>> TimeIn(string userId, [FromQuery] string? sessionType = null)
     {
+        if (!IsAuthorizedOwner(userId))
+            return Forbid();
+
         var user = await _mongoDbService.GetUserByIdAsync(userId);
         if (user is null)
             return NotFound(new { message = "User not found." });
@@ -116,15 +170,26 @@ public class TimeLogsController : ControllerBase
 
     // POST: api/timelogs/time-out/{userId}
     [HttpPost("time-out/{userId:length(24)}")]
+    [EnableRateLimiting("StrictPolicy")]
     public async Task<ActionResult<TimeLog>> TimeOut(string userId, [FromQuery] bool deductLunch = false)
     {
+        if (!IsAuthorizedOwner(userId))
+            return Forbid();
+
         var activeLog = await _mongoDbService.GetActiveTimeLogByUserIdAsync(userId);
         if (activeLog is null || activeLog.Id is null)
             return BadRequest(new { message = "No active time-in session found for this user." });
 
-        activeLog.TimeOut = DateTime.UtcNow;
+        var timeOutTimestamp = DateTime.UtcNow;
+
+        // Server-Side Data Validation: TimeOut > TimeIn and Duration <= 24 hours
+        var (isValid, validationError) = ValidateShiftTimestamps(activeLog.TimeIn, timeOutTimestamp);
+        if (!isValid)
+            return BadRequest(new { message = validationError });
+
+        activeLog.TimeOut = timeOutTimestamp;
         activeLog.DeductLunchBreak = deductLunch;
-        activeLog.HoursLogged = CalculateHours(activeLog.TimeIn, activeLog.TimeOut.Value, deductLunch);
+        activeLog.HoursLogged = CalculateHours(activeLog.TimeIn, timeOutTimestamp, deductLunch);
 
         await _mongoDbService.UpdateTimeLogAsync(activeLog.Id, activeLog);
         return Ok(activeLog);
@@ -132,10 +197,18 @@ public class TimeLogsController : ControllerBase
 
     // POST: api/timelogs (Manual entry)
     [HttpPost]
+    [EnableRateLimiting("StrictPolicy")]
     public async Task<ActionResult<TimeLog>> CreateManual([FromBody] TimeLog newTimeLog)
     {
+        if (!IsAuthorizedOwner(newTimeLog.UserId))
+            return Forbid();
+
         if (newTimeLog.TimeOut.HasValue)
         {
+            var (isValid, validationError) = ValidateShiftTimestamps(newTimeLog.TimeIn, newTimeLog.TimeOut.Value);
+            if (!isValid)
+                return BadRequest(new { message = validationError });
+
             newTimeLog.HoursLogged = CalculateHours(
                 newTimeLog.TimeIn,
                 newTimeLog.TimeOut.Value,
@@ -159,10 +232,17 @@ public class TimeLogsController : ControllerBase
         if (existingLog is null)
             return NotFound(new { message = "Time log not found." });
 
+        if (!IsAuthorizedOwner(existingLog.UserId))
+            return Forbid();
+
         updatedTimeLog.Id = existingLog.Id;
 
         if (updatedTimeLog.TimeOut.HasValue)
         {
+            var (isValid, validationError) = ValidateShiftTimestamps(updatedTimeLog.TimeIn, updatedTimeLog.TimeOut.Value);
+            if (!isValid)
+                return BadRequest(new { message = validationError });
+
             updatedTimeLog.HoursLogged = CalculateHours(
                 updatedTimeLog.TimeIn,
                 updatedTimeLog.TimeOut.Value,
@@ -181,8 +261,10 @@ public class TimeLogsController : ControllerBase
         if (existingLog is null)
             return NotFound(new { message = "Time log not found." });
 
-        await _mongoDbService.DeleteTimeLogAsync(id);
+        if (!IsAuthorizedOwner(existingLog.UserId))
+            return Forbid();
+
+        await _mongoDbService.DeleteTimeLogAsync(id, existingLog.UserId);
         return NoContent();
     }
 }
-

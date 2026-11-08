@@ -3,6 +3,7 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace InternshipHoursTracker.Models;
 
+[BsonIgnoreExtraElements]
 public class User
 {
     [BsonId]
@@ -11,8 +12,25 @@ public class User
 
     public string Username { get; set; } = null!;
 
+    public string? FullName { get; set; }
+
+    public string? Email { get; set; }
+
     public string Password { get; set; } = null!;
 
     public double TargetHours { get; set; } = 400;
+
+    [BsonIgnore]
+    public string? Token { get; set; }
+
+    public bool IsEmailVerified { get; set; } = false;
+
+    public string? VerificationCode { get; set; }
+
+    public DateTime? VerificationCodeExpiry { get; set; }
+
+    public string? PasswordResetCode { get; set; }
+
+    public DateTime? PasswordResetExpiry { get; set; }
 }
 
