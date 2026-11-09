@@ -41,6 +41,73 @@ html, body {
   cursor: pointer;
 }
 
+.log-action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.edit-inline-btn,
+.cancel-inline-btn {
+  border-radius: 6px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.edit-inline-btn {
+  background: rgba(59, 130, 246, 0.14);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.cancel-inline-btn {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid #334155;
+}
+
+.edit-log-form {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.edit-log-form label {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.edit-log-form input[type="date"],
+.edit-log-form input[type="time"] {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #26334d;
+  border-radius: 6px;
+  background: #0b101b;
+  color: #f8fafc;
+  color-scheme: dark;
+}
+
+.edit-lunch-checkbox {
+  grid-column: 1 / -1;
+  display: flex !important;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 !important;
+  color: #94a3b8 !important;
+}
+
+.edit-log-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 .brand-logo-box {
   width: 34px;
   height: 34px;
@@ -1212,7 +1279,9 @@ body.light-theme html {
 }
 
 .app-shell.light-mode .manual-form input,
-.app-shell.light-mode .settings-input {
+.app-shell.light-mode .settings-input,
+.app-shell.light-mode .edit-log-form input[type="date"],
+.app-shell.light-mode .edit-log-form input[type="time"] {
   background: #f8fafc;
   border-color: #cbd5e1;
   color: #0f172a;
@@ -1266,6 +1335,7 @@ body.light-theme html {
   .progress-web-layout,
   .session-selector-grid,
   .manual-form,
+  .edit-log-form,
   .detail-grid,
   .profile-info-grid,
   .settings-two-col {

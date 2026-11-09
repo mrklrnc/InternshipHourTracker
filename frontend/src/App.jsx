@@ -57,6 +57,11 @@ export default function App() {
   const [summary, setSummary] = useState(null)
   const [logs, setLogs] = useState([])
   const [expandedLogId, setExpandedLogId] = useState(null)
+  const [editingLogId, setEditingLogId] = useState(null)
+  const [editDate, setEditDate] = useState('')
+  const [editStartTime, setEditStartTime] = useState('')
+  const [editEndTime, setEditEndTime] = useState('')
+  const [editDeductLunch, setEditDeductLunch] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const LOGS_PER_PAGE = 10
 
@@ -463,6 +468,49 @@ export default function App() {
       headers: getAuthHeaders()
     })
     await fetchDashboard(user.id)
+  }
+
+  function handleEditLog(log) {
+    const timeIn = new Date(log.timeIn)
+    const timeOut = log.timeOut ? new Date(log.timeOut) : null
+    const pad = value => String(value).padStart(2, '0')
+
+    setEditingLogId(log.id)
+    setEditDate(`${timeIn.getFullYear()}-${pad(timeIn.getMonth() + 1)}-${pad(timeIn.getDate())}`)
+    setEditStartTime(`${pad(timeIn.getHours())}:${pad(timeIn.getMinutes())}`)
+    setEditEndTime(timeOut ? `${pad(timeOut.getHours())}:${pad(timeOut.getMinutes())}` : '')
+    setEditDeductLunch(log.deductLunchBreak)
+  }
+
+  async function handleUpdateLog(e, log) {
+    e.preventDefault()
+    if (!editDate || !editStartTime || !editEndTime) return
+
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE}/timelogs/${log.id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          userId: log.userId,
+          timeIn: new Date(`${editDate}T${editStartTime}`).toISOString(),
+          timeOut: new Date(`${editDate}T${editEndTime}`).toISOString(),
+          deductLunchBreak: editDeductLunch,
+          sessionType: log.sessionType,
+          hoursLogged: 0
+        })
+      })
+
+      if (res.ok) {
+        setEditingLogId(null)
+        await fetchDashboard(user.id)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setError(data.message || 'Could not update time log.')
+      }
+    } catch {
+      setError('Failed to save edited time log.')
+    }
   }
 
   function handleExportPDF() {
@@ -1424,29 +1472,53 @@ export default function App() {
 
                           {isOpen && (
                             <div className="history-row-details">
-                              <div className="detail-grid">
-                                <div>
-                                  <span className="detail-lbl">Time In:</span>{' '}
-                                  <strong>{new Date(log.timeIn).toLocaleTimeString()}</strong>
+                              {editingLogId === log.id ? (
+                                <form className="edit-log-form" onSubmit={e => handleUpdateLog(e, log)}>
+                                  <div>
+                                    <label>Session Date</label>
+                                    <input type="date" required value={editDate} onChange={e => setEditDate(e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <label>Time In</label>
+                                    <input type="time" required value={editStartTime} onChange={e => setEditStartTime(e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <label>Time Out</label>
+                                    <input type="time" required value={editEndTime} onChange={e => setEditEndTime(e.target.value)} />
+                                  </div>
+                                  <label className="edit-lunch-checkbox">
+                                    <input type="checkbox" checked={editDeductLunch} onChange={e => setEditDeductLunch(e.target.checked)} />
+                                    Deduct 1-hour unpaid lunch break
+                                  </label>
+                                  <div className="edit-log-actions">
+                                    <button type="submit" className="edit-inline-btn">Save Changes</button>
+                                    <button type="button" className="cancel-inline-btn" onClick={() => setEditingLogId(null)}>Cancel</button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <div className="detail-grid">
+                                  <div>
+                                    <span className="detail-lbl">Time In:</span>{' '}
+                                    <strong>{new Date(log.timeIn).toLocaleTimeString()}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="detail-lbl">Time Out:</span>{' '}
+                                    <strong>{log.timeOut ? new Date(log.timeOut).toLocaleTimeString() : 'In progress...'}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="detail-lbl">Lunch Break:</span>{' '}
+                                    <span>{log.deductLunchBreak ? 'Auto-deducted 1h unpaid lunch' : 'No lunch deduction (Half Day)'}</span>
+                                  </div>
+                                  <div className="log-action-buttons">
+                                    <button type="button" className="edit-inline-btn" onClick={() => handleEditLog(log)}>
+                                      Edit Log
+                                    </button>
+                                    <button type="button" className="delete-inline-btn" onClick={() => handleDeleteLog(log.id)}>
+                                      Delete Log
+                                    </button>
+                                  </div>
                                 </div>
-                                <div>
-                                  <span className="detail-lbl">Time Out:</span>{' '}
-                                  <strong>{log.timeOut ? new Date(log.timeOut).toLocaleTimeString() : 'In progress...'}</strong>
-                                </div>
-                                <div>
-                                  <span className="detail-lbl">Lunch Break:</span>{' '}
-                                  <span>{log.deductLunchBreak ? 'Auto-deducted 1h unpaid lunch' : 'No lunch deduction (Half Day)'}</span>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  <button
-                                    type="button"
-                                    className="delete-inline-btn"
-                                    onClick={() => handleDeleteLog(log.id)}
-                                  >
-                                    Delete Log
-                                  </button>
-                                </div>
-                              </div>
+                              )}
                             </div>
                           )}
                         </div>
