@@ -41,73 +41,6 @@ html, body {
   cursor: pointer;
 }
 
-.log-action-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.edit-inline-btn,
-.cancel-inline-btn {
-  border-radius: 6px;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.78rem;
-  cursor: pointer;
-}
-
-.edit-inline-btn {
-  background: rgba(59, 130, 246, 0.14);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.35);
-}
-
-.cancel-inline-btn {
-  background: transparent;
-  color: #94a3b8;
-  border: 1px solid #334155;
-}
-
-.edit-log-form {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr;
-  gap: 0.7rem;
-  align-items: end;
-}
-
-.edit-log-form label {
-  display: block;
-  margin-bottom: 0.3rem;
-  color: #64748b;
-  font-size: 0.78rem;
-}
-
-.edit-log-form input[type="date"],
-.edit-log-form input[type="time"] {
-  width: 100%;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid #26334d;
-  border-radius: 6px;
-  background: #0b101b;
-  color: #f8fafc;
-  color-scheme: dark;
-}
-
-.edit-lunch-checkbox {
-  grid-column: 1 / -1;
-  display: flex !important;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0 !important;
-  color: #94a3b8 !important;
-}
-
-.edit-log-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
 .brand-logo-box {
   width: 34px;
   height: 34px;
@@ -177,6 +110,21 @@ html, body {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
   width: 100%;
   min-width: 0;
+}
+
+.auth-card-transition {
+  width: 100%;
+  max-width: 420px;
+  transition: opacity 0.7s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.auth-card-transition.exit-success {
+  opacity: 0;
+  transform: scale(0.95) translateY(6px);
+  pointer-events: none;
 }
 
 .auth-card {
@@ -310,16 +258,42 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   padding: 0.9rem 1.2rem;
   background: linear-gradient(90deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%);
   color: #ffffff;
-  border: none;
+  border: 1px solid rgba(96, 165, 250, 0.35);
   border-radius: 11px;
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
   box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
+  transition: all 0.3s ease;
+}
+
+.signin-btn.btn-loading {
+  background: #334155;
+  border-color: #475569;
+  color: #cbd5e1;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.signin-btn.btn-success {
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+  border-color: #34d399;
+  color: #ffffff;
+  box-shadow: 0 6px 22px rgba(16, 185, 129, 0.45);
+  transform: scale(1.01);
+}
+
+.spin-loader {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .forgot-link-wrap {
@@ -478,25 +452,45 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 /* ==========================================
-   3. LIVE TIME CLOCK
+   3. LIVE TIME CLOCK (COOL SLATE & SAPPHIRE THEME)
    ========================================== */
+.clock-section-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(30, 41, 59, 0.85);
+  border-radius: 16px;
+}
+
 .clock-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.15rem;
+  margin-bottom: 0.75rem;
 }
 
 .status-pill-outline {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background: #0b101b;
-  border: 1px solid #222f46;
-  padding: 0.35rem 0.8rem;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(51, 65, 85, 0.7);
+  padding: 0.32rem 0.8rem;
   border-radius: 999px;
-  font-size: 0.8rem;
-  color: #cbd5e1;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.status-pill-emerald {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  padding: 0.32rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #34d399;
 }
 
 .dot {
@@ -505,23 +499,46 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   border-radius: 50%;
 }
 
-.dot-red { background: #ef4444; }
-.dot-green {
-  background: #10b981;
-  box-shadow: 0 0 8px #10b981;
+.dot-slate {
+  background: #64748b;
+}
+
+.dot-green-pulse {
+  background: #34d399;
+  box-shadow: 0 0 8px #34d399;
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.2); }
 }
 
 .active-since {
-  font-size: 0.85rem;
-  color: #60a5fa;
-  margin-bottom: 0.85rem;
+  font-size: 0.78rem;
+  color: rgba(96, 165, 250, 0.85);
+  margin-bottom: 1.1rem;
+}
+
+.official-hours-muted {
+  color: #64748b;
 }
 
 .session-type-label {
-  font-size: 0.82rem;
-  color: #64748b;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 0.65rem;
+}
+
+.shift-policy-inline {
+  text-transform: none;
+  letter-spacing: normal;
   font-weight: 500;
-  margin-bottom: 0.6rem;
+  color: #60a5fa;
+  margin-left: 0.35rem;
 }
 
 .session-selector-grid {
@@ -532,8 +549,8 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 .session-option-card {
-  background: #0b101b;
-  border: 1px solid #1d283d;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(30, 41, 59, 0.85);
   border-radius: 12px;
   padding: 1.05rem 0.85rem;
   display: flex;
@@ -546,29 +563,40 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   transition: all 0.2s ease;
 }
 
+.session-option-card:hover {
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
 .session-option-card.compact {
   padding: 0.7rem 0.65rem;
 }
 
 .session-option-card.selected {
-  background: #0f1e3a;
-  border: 1.5px solid #3b82f6;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.85) 0%, #111e38 55%, #0c1629 100%);
+  border: 1px solid rgba(59, 130, 246, 0.45);
   color: #ffffff;
-  box-shadow: 0 0 22px rgba(59, 130, 246, 0.15);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.14);
 }
 
 .radio-circle {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #1e293b;
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(51, 65, 85, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 0.15rem;
 }
 
-.radio-circle.checked { background: #3b82f6; }
+.radio-circle.checked {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(52, 211, 153, 0.55);
+  color: #34d399;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
 
 .session-option-title {
   font-size: 0.9rem;
@@ -576,12 +604,12 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 .session-option-sub {
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: #64748b;
 }
 
 .session-option-card.selected .session-option-sub {
-  color: #93c5fd;
+  color: rgba(147, 197, 253, 0.85);
 }
 
 .wide-action-stack {
@@ -592,35 +620,66 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 .wide-btn {
   width: 100%;
-  border: none;
-  border-radius: 10px;
-  padding: 0.95rem 1.2rem;
-  font-size: 0.95rem;
-  font-weight: 700;
+  border-radius: 12px;
+  padding: 0.92rem 1.2rem;
+  font-size: 0.92rem;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
+  transition: all 0.2s ease;
 }
 
-.green-wide-btn { background: #10b981; color: #052e16; }
-.blue-wide-btn { background: #2563eb; color: #ffffff; }
-.amber-wide-btn { background: #f59e0b; color: #0f172a; }
-.red-wide-btn { background: #ef4444; color: #ffffff; }
+/* Primary Cool-Tone Button: Sapphire / Royal Blue Gradient */
+.sapphire-primary-btn {
+  background: linear-gradient(90deg, #1d4ed8 0%, #4f46e5 100%);
+  border: 1px solid rgba(59, 130, 246, 0.85);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(23, 37, 84, 0.55);
+}
+
+.sapphire-primary-btn:hover {
+  background: linear-gradient(90deg, #2563eb 0%, #6366f1 100%);
+  border-color: #60a5fa;
+}
+
+/* Secondary Ghost/Outline Cool-Slate Button (Lunch Out / Back from Lunch) */
+.slate-ghost-btn {
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(51, 65, 85, 0.65);
+  color: #cbd5e1;
+}
+
+.slate-ghost-btn:hover {
+  background: #1e293b;
+  border-color: #64748b;
+  color: #ffffff;
+}
+
+.blue-wide-btn { background: #2563eb; color: #ffffff; border: none; }
 
 .manual-toggle-row {
   margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(30, 41, 59, 0.6);
   text-align: center;
 }
 
 .manual-link-btn {
   background: transparent;
   border: none;
-  color: #64748b;
-  font-size: 0.84rem;
+  color: #94a3b8;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.manual-link-btn:hover {
+  color: #60a5fa;
 }
 
 .manual-drawer {
@@ -690,13 +749,21 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   align-items: center;
   gap: 0.4rem;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: #3b82f6;
   font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.7rem;
   border-radius: 8px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.export-pdf-btn:hover {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #60a5fa;
+  transform: translateY(-1px);
 }
 
 .history-rows-list {
@@ -710,10 +777,22 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   border: 1px solid #1d283d;
   border-radius: 12px;
   overflow: hidden;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.22s ease,
+              background-color 0.22s ease,
+              box-shadow 0.22s ease;
+}
+
+.history-row-card:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: #0f1728;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.6), 0 0 15px rgba(59, 130, 246, 0.1);
 }
 
 .history-row-card.expanded {
   border-color: #2563eb;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.15);
 }
 
 .history-row-summary {
@@ -726,6 +805,18 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.history-row-summary:hover .circle-chevron {
+  background: #1e293b;
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #60a5fa;
+  transform: scale(1.06);
+}
+
+.history-row-summary:hover .circle-chevron.rotated {
+  transform: rotate(180deg) scale(1.06);
 }
 
 .history-row-left {
@@ -782,11 +873,15 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   height: 28px;
   border-radius: 50%;
   background: #172133;
+  border: 1px solid transparent;
   color: #94a3b8;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s ease;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.2s ease,
+              border-color 0.2s ease,
+              color 0.2s ease;
 }
 
 .circle-chevron.rotated {
@@ -798,6 +893,18 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   padding: 0.85rem 1.15rem 1rem;
   border-top: 1px solid #1d283d;
   background: #0e1525;
+  animation: slideDownFade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .detail-grid {
@@ -811,14 +918,109 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 .detail-lbl { color: #64748b; }
 
-.delete-inline-btn {
-  background: rgba(239, 68, 68, 0.14);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+.log-action-buttons-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.edit-inline-btn {
+  background: rgba(59, 130, 246, 0.14);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
   border-radius: 6px;
-  padding: 0.3rem 0.65rem;
+  padding: 0.32rem 0.75rem;
   font-size: 0.78rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.edit-inline-btn:hover {
+  background: rgba(59, 130, 246, 0.26);
+  border-color: rgba(96, 165, 250, 0.7);
+  color: #dbeafe;
+  transform: translateY(-1px);
+}
+
+.save-inline-btn {
+  background: linear-gradient(90deg, #1d4ed8 0%, #4f46e5 100%);
+  color: #ffffff;
+  border: 1px solid rgba(59, 130, 246, 0.7);
+  border-radius: 6px;
+  padding: 0.38rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.save-inline-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.cancel-inline-btn {
+  background: rgba(30, 41, 59, 0.6);
+  color: #cbd5e1;
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  border-radius: 6px;
+  padding: 0.38rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-inline-btn:hover {
+  background: #1e293b;
+  color: #ffffff;
+}
+
+.edit-log-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.edit-log-options-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.session-select-input {
+  background: #0b101b;
+  border: 1px solid #26334d;
+  color: #f8fafc;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.delete-inline-btn {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 6px;
+  padding: 0.32rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.delete-inline-btn:hover {
+  background: rgba(239, 68, 68, 0.24);
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+  transform: translateY(-1px);
 }
 
 .pagination-bar {
@@ -1279,9 +1481,7 @@ body.light-theme html {
 }
 
 .app-shell.light-mode .manual-form input,
-.app-shell.light-mode .settings-input,
-.app-shell.light-mode .edit-log-form input[type="date"],
-.app-shell.light-mode .edit-log-form input[type="time"] {
+.app-shell.light-mode .settings-input {
   background: #f8fafc;
   border-color: #cbd5e1;
   color: #0f172a;
@@ -1335,7 +1535,6 @@ body.light-theme html {
   .progress-web-layout,
   .session-selector-grid,
   .manual-form,
-  .edit-log-form,
   .detail-grid,
   .profile-info-grid,
   .settings-two-col {

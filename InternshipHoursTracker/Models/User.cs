@@ -20,6 +20,10 @@ public class User
 
     public double TargetHours { get; set; } = 400;
 
+    public string WorkStartTime { get; set; } = "08:00";
+
+    public string WorkEndTime { get; set; } = "17:00";
+
     [BsonIgnore]
     public string? Token { get; set; }
 

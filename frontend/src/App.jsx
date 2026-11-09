@@ -49,19 +49,17 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [targetHours, setTargetHours] = useState(400)
+  const [regWorkStart, setRegWorkStart] = useState('08:00')
+  const [regWorkEnd, setRegWorkEnd] = useState('17:00')
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
 
   // Dashboard & Logs State
   const [summary, setSummary] = useState(null)
   const [logs, setLogs] = useState([])
   const [expandedLogId, setExpandedLogId] = useState(null)
-  const [editingLogId, setEditingLogId] = useState(null)
-  const [editDate, setEditDate] = useState('')
-  const [editStartTime, setEditStartTime] = useState('')
-  const [editEndTime, setEditEndTime] = useState('')
-  const [editDeductLunch, setEditDeductLunch] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const LOGS_PER_PAGE = 10
 
@@ -76,11 +74,21 @@ export default function App() {
   const [deductLunch, setDeductLunch] = useState(true)
   const [liveDeductLunch, setLiveDeductLunch] = useState(false)
 
+  // Edit Log State
+  const [editingLogId, setEditingLogId] = useState(null)
+  const [editLogDate, setEditLogDate] = useState('')
+  const [editLogStartTime, setEditLogStartTime] = useState('')
+  const [editLogEndTime, setEditLogEndTime] = useState('')
+  const [editLogDeductLunch, setEditLogDeductLunch] = useState(false)
+  const [editLogSessionType, setEditLogSessionType] = useState('')
+
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [editFullName, setEditFullName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editTargetHours, setEditTargetHours] = useState(400)
+  const [editWorkStart, setEditWorkStart] = useState('08:00')
+  const [editWorkEnd, setEditWorkEnd] = useState('17:00')
 
   // Settings State
   const [currentPassword, setCurrentPassword] = useState('')
@@ -102,24 +110,30 @@ export default function App() {
       setEditFullName(user.fullName || user.username || '')
       setEditEmail(user.email || `${user.username.toLowerCase().replace(/\s+/g, '')}@university.edu`)
       setEditTargetHours(user.targetHours || 400)
+      setEditWorkStart(user.workStartTime || '08:00')
+      setEditWorkEnd(user.workEndTime || '17:00')
+      setManualStartTime(user.workStartTime || '08:00')
+      setManualEndTime(user.workEndTime || '17:00')
     }
   }, [user])
 
   useEffect(() => {
+    const startDefault = user?.workStartTime || '08:00'
+    const endDefault = user?.workEndTime || '17:00'
     if (manualSessionMode === 'full') {
       setDeductLunch(true)
-      setManualStartTime('08:00')
-      setManualEndTime('17:00')
+      setManualStartTime(startDefault)
+      setManualEndTime(endDefault)
     } else if (manualSessionMode === 'half-am') {
       setDeductLunch(false)
-      setManualStartTime('08:00')
+      setManualStartTime(startDefault)
       setManualEndTime('12:00')
     } else if (manualSessionMode === 'half-pm') {
       setDeductLunch(false)
       setManualStartTime('13:00')
-      setManualEndTime('17:00')
+      setManualEndTime(endDefault)
     }
-  }, [manualSessionMode])
+  }, [manualSessionMode, user?.workStartTime, user?.workEndTime])
 
   function getAuthHeaders(extra = {}) {
     return user?.token
@@ -164,7 +178,9 @@ export default function App() {
             fullName: fullName.trim() || username,
             email,
             password,
-            targetHours: Number(targetHours) || 400
+            targetHours: Number(targetHours) || 400,
+            workStartTime: regWorkStart || '08:00',
+            workEndTime: regWorkEnd || '17:00'
           }
 
       const res = await fetch(`${API_BASE}/users/${endpoint}`, {
@@ -192,9 +208,15 @@ export default function App() {
           email: data.email || email || `${data.username.toLowerCase()}@university.edu`,
           fullName: data.fullName || fullName.trim() || data.username
         }
-        localStorage.setItem('internship_user', JSON.stringify(enrichedUser))
-        setUser(enrichedUser)
-        setActiveNav('dashboard')
+        setLoading(false)
+        setIsSuccess(true)
+        setTimeout(() => {
+          localStorage.setItem('internship_user', JSON.stringify(enrichedUser))
+          setUser(enrichedUser)
+          setIsSuccess(false)
+          setActiveNav('dashboard')
+        }, 800)
+        return
       }
     } catch {
       setError('Cannot reach backend at ' + API_BASE)
@@ -218,9 +240,15 @@ export default function App() {
       if (!res.ok) {
         setError(data.message || 'Invalid verification code.')
       } else {
-        localStorage.setItem('internship_user', JSON.stringify(data))
-        setUser(data)
-        setActiveNav('dashboard')
+        setLoading(false)
+        setIsSuccess(true)
+        setTimeout(() => {
+          localStorage.setItem('internship_user', JSON.stringify(data))
+          setUser(data)
+          setIsSuccess(false)
+          setActiveNav('dashboard')
+        }, 800)
+        return
       }
     } catch {
       setError('Failed to verify code.')
@@ -322,7 +350,9 @@ export default function App() {
       ...user,
       fullName: editFullName,
       email: editEmail,
-      targetHours: Number(editTargetHours) || 400
+      targetHours: Number(editTargetHours) || 400,
+      workStartTime: editWorkStart || '08:00',
+      workEndTime: editWorkEnd || '17:00'
     }
     try {
       const res = await fetch(`${API_BASE}/users/${user.id}`, {
@@ -408,9 +438,10 @@ export default function App() {
   async function handleTimeOut(shouldDeductLunch = false) {
     if (!user) return
     setError('')
+    const tzOffset = new Date().getTimezoneOffset()
     try {
       const res = await fetch(
-        `${API_BASE}/timelogs/time-out/${user.id}?deductLunch=${shouldDeductLunch}`,
+        `${API_BASE}/timelogs/time-out/${user.id}?deductLunch=${shouldDeductLunch}&tzOffsetMinutes=${tzOffset}`,
         { method: 'POST', headers: getAuthHeaders() }
       )
       const data = await res.json()
@@ -436,9 +467,10 @@ export default function App() {
     }
     const timeInIso = new Date(`${manualDate}T${manualStartTime}`).toISOString()
     const timeOutIso = new Date(`${manualDate}T${manualEndTime}`).toISOString()
+    const tzOffset = new Date().getTimezoneOffset()
 
     try {
-      const res = await fetch(`${API_BASE}/timelogs`, {
+      const res = await fetch(`${API_BASE}/timelogs?tzOffsetMinutes=${tzOffset}`, {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
@@ -470,46 +502,56 @@ export default function App() {
     await fetchDashboard(user.id)
   }
 
-  function handleEditLog(log) {
-    const timeIn = new Date(log.timeIn)
-    const timeOut = log.timeOut ? new Date(log.timeOut) : null
-    const pad = value => String(value).padStart(2, '0')
+  function startEditLog(log) {
+    const inDate = new Date(log.timeIn)
+    const pad = n => String(n).padStart(2, '0')
+    const localDateStr = `${inDate.getFullYear()}-${pad(inDate.getMonth() + 1)}-${pad(inDate.getDate())}`
+    const localStartStr = `${pad(inDate.getHours())}:${pad(inDate.getMinutes())}`
+
+    let localEndStr = user.workEndTime || '17:00'
+    if (log.timeOut) {
+      const outDate = new Date(log.timeOut)
+      localEndStr = `${pad(outDate.getHours())}:${pad(outDate.getMinutes())}`
+    }
 
     setEditingLogId(log.id)
-    setEditDate(`${timeIn.getFullYear()}-${pad(timeIn.getMonth() + 1)}-${pad(timeIn.getDate())}`)
-    setEditStartTime(`${pad(timeIn.getHours())}:${pad(timeIn.getMinutes())}`)
-    setEditEndTime(timeOut ? `${pad(timeOut.getHours())}:${pad(timeOut.getMinutes())}` : '')
-    setEditDeductLunch(log.deductLunchBreak)
+    setEditLogDate(localDateStr)
+    setEditLogStartTime(localStartStr)
+    setEditLogEndTime(localEndStr)
+    setEditLogDeductLunch(Boolean(log.deductLunchBreak))
+    setEditLogSessionType(log.sessionType || (log.deductLunchBreak ? 'Full Day (-1h Lunch)' : 'Half Day (AM - No Lunch)'))
   }
 
-  async function handleUpdateLog(e, log) {
+  async function handleUpdateLogSubmit(e, log) {
     e.preventDefault()
-    if (!editDate || !editStartTime || !editEndTime) return
-
     setError('')
+    const timeInIso = new Date(`${editLogDate}T${editLogStartTime}`).toISOString()
+    const timeOutIso = new Date(`${editLogDate}T${editLogEndTime}`).toISOString()
+    const tzOffset = new Date().getTimezoneOffset()
+
     try {
-      const res = await fetch(`${API_BASE}/timelogs/${log.id}`, {
+      const res = await fetch(`${API_BASE}/timelogs/${log.id}?tzOffsetMinutes=${tzOffset}`, {
         method: 'PUT',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          userId: log.userId,
-          timeIn: new Date(`${editDate}T${editStartTime}`).toISOString(),
-          timeOut: new Date(`${editDate}T${editEndTime}`).toISOString(),
-          deductLunchBreak: editDeductLunch,
-          sessionType: log.sessionType,
-          hoursLogged: 0
+          id: log.id,
+          userId: user.id,
+          timeIn: timeInIso,
+          timeOut: timeOutIso,
+          deductLunchBreak: editLogDeductLunch,
+          sessionType: editLogSessionType,
+          hoursLogged: log.hoursLogged
         })
       })
-
       if (res.ok) {
         setEditingLogId(null)
         await fetchDashboard(user.id)
       } else {
         const data = await res.json().catch(() => ({}))
-        setError(data.message || 'Could not update time log.')
+        setError(data.message || 'Failed to update time log.')
       }
     } catch {
-      setError('Failed to save edited time log.')
+      setError('Failed to reach backend API.')
     }
   }
 
@@ -670,7 +712,8 @@ export default function App() {
   if (!user) {
     return (
       <div className="auth-wrapper">
-        <div className="card auth-card">
+        <div className={`auth-card-transition ${isSuccess ? 'exit-success' : ''}`}>
+          <div className="card auth-card">
           <h1>Internship Hours Tracker</h1>
           <p className="subtitle">Track your 400-hour requirement seamlessly</p>
 
@@ -733,8 +776,29 @@ export default function App() {
                 />
               </div>
 
-              <button type="submit" className="signin-btn" disabled={loading}>
-                <span>{loading ? 'Verifying...' : 'Verify Email & Sign In'}</span>
+              <button
+                type="submit"
+                className={`signin-btn ${loading ? 'btn-loading' : ''} ${isSuccess ? 'btn-success' : ''}`}
+                disabled={loading || isSuccess}
+              >
+                {loading && (
+                  <>
+                    <svg className="spin-loader" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+                      <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span>Verifying...</span>
+                  </>
+                )}
+                {!loading && isSuccess && (
+                  <>
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span>Success!</span>
+                  </>
+                )}
+                {!loading && !isSuccess && <span>Verify Email & Sign In</span>}
               </button>
 
               <div className="forgot-link-wrap" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}>
@@ -990,16 +1054,64 @@ export default function App() {
                     onChange={e => setTargetHours(e.target.value)}
                   />
                 </div>
+
+                <div className="manual-form" style={{ marginTop: '0.4rem' }}>
+                  <div>
+                    <label>Company Start Time</label>
+                    <input
+                      type="time"
+                      required
+                      value={regWorkStart}
+                      onClick={e => e.target.showPicker && e.target.showPicker()}
+                      onChange={e => setRegWorkStart(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label>Company End Time</label>
+                    <input
+                      type="time"
+                      required
+                      value={regWorkEnd}
+                      onClick={e => e.target.showPicker && e.target.showPicker()}
+                      onChange={e => setRegWorkEnd(e.target.value)}
+                    />
+                  </div>
+                </div>
               </>
             )}
 
-            <button type="submit" className="signin-btn" disabled={loading}>
-              <span>{loading ? 'Please wait...' : authMode === 'login' ? 'Sign In' : 'Create Account'}</span>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                <polyline points="10 17 15 12 10 7" />
-                <line x1="15" x2="3" y1="12" y2="12" />
-              </svg>
+            <button
+              type="submit"
+              className={`signin-btn ${loading ? 'btn-loading' : ''} ${isSuccess ? 'btn-success' : ''}`}
+              disabled={loading || isSuccess}
+            >
+              {loading && (
+                <>
+                  <svg className="spin-loader" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span>Authenticating...</span>
+                </>
+              )}
+              {!loading && isSuccess && (
+                <>
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>Success!</span>
+                </>
+              )}
+              {!loading && !isSuccess && (
+                <>
+                  <span>{authMode === 'login' ? 'Sign In' : 'Create Account'}</span>
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <polyline points="10 17 15 12 10 7" />
+                    <line x1="15" x2="3" y1="12" y2="12" />
+                  </svg>
+                </>
+              )}
             </button>
 
             {authMode === 'login' && (
@@ -1015,6 +1127,7 @@ export default function App() {
             )}
           </form>
           )}
+          </div>
         </div>
       </div>
     )
@@ -1193,8 +1306,8 @@ export default function App() {
             <section className="card clock-section-card">
               <div className="clock-card-header">
                 <h2>Live Time Clock</h2>
-                <div className="status-pill-outline">
-                  <span className={isClockedIn ? 'dot dot-green' : 'dot dot-red'} />
+                <div className={isClockedIn ? 'status-pill-emerald' : 'status-pill-outline'}>
+                  <span className={isClockedIn ? 'dot dot-green-pulse' : 'dot dot-slate'} />
                   <span>
                     {isClockedIn
                       ? `Clocked In (${summary?.activeTimeLog?.sessionType || 'Active'})`
@@ -1205,11 +1318,19 @@ export default function App() {
 
               {summary?.activeTimeLog && (
                 <p className="active-since">
-                  Session started at: {new Date(summary.activeTimeLog.timeIn).toLocaleTimeString()}
+                  Session started at {new Date(summary.activeTimeLog.timeIn).toLocaleTimeString()}{' '}
+                  <span className="official-hours-muted">
+                    • Official Company Hours: {user.workStartTime || '08:00'} – {user.workEndTime || '17:00'}
+                  </span>
                 </p>
               )}
 
-              <div className="session-type-label">Session Type</div>
+              <div className="session-type-label">
+                SESSION TYPE{' '}
+                <span className="shift-policy-inline">
+                  • Official Shift: {user.workStartTime || '08:00'} to {user.workEndTime || '17:00'} (early clock-in counts from {user.workStartTime || '08:00'})
+                </span>
+              </div>
               <div className="session-selector-grid">
                 <button
                   type="button"
@@ -1218,7 +1339,7 @@ export default function App() {
                 >
                   <span className={`radio-circle ${sessionMode === 'full' ? 'checked' : ''}`}>
                     {sessionMode === 'full' && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}
@@ -1234,7 +1355,7 @@ export default function App() {
                 >
                   <span className={`radio-circle ${sessionMode === 'half-am' ? 'checked' : ''}`}>
                     {sessionMode === 'half-am' && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}
@@ -1250,7 +1371,7 @@ export default function App() {
                 >
                   <span className={`radio-circle ${sessionMode === 'half-pm' ? 'checked' : ''}`}>
                     {sessionMode === 'half-pm' && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}
@@ -1272,9 +1393,9 @@ export default function App() {
                             : 'Morning (AM)'
                         )
                       }
-                      className="wide-btn green-wide-btn"
+                      className="wide-btn sapphire-primary-btn"
                     >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                         <polygon points="5 3 19 12 5 21 5 3" />
                       </svg>
                       <span>
@@ -1293,8 +1414,12 @@ export default function App() {
                             : 'Afternoon (PM)'
                         )
                       }
-                      className="wide-btn blue-wide-btn"
+                      className={sessionMode === 'half-pm' ? 'wide-btn sapphire-primary-btn' : 'wide-btn slate-ghost-btn'}
                     >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
                       <span>
                         {sessionMode === 'half-pm' ? 'Afternoon Time In (Half Day PM)' : 'Back from Lunch (PM)'}
                       </span>
@@ -1307,16 +1432,30 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleTimeOut(false)}
-                      className="wide-btn amber-wide-btn"
+                      className="wide-btn slate-ghost-btn"
                     >
+                      {/* Coffee Cup Icon */}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+                        <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+                        <line x1="6" x2="6" y1="2" y2="4" />
+                        <line x1="10" x2="10" y1="2" y2="4" />
+                        <line x1="14" x2="14" y1="2" y2="4" />
+                      </svg>
                       <span>Time Out for Lunch (1 hr unpaid)</span>
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => handleTimeOut(liveDeductLunch)}
-                    className="wide-btn red-wide-btn"
+                    className="wide-btn sapphire-primary-btn"
                   >
+                    {/* Clock-Out / Exit Icon */}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" x2="9" y1="12" y2="12" />
+                    </svg>
                     <span>End of Shift Time Out</span>
                   </button>
                   <label className="checkbox-row" style={{ marginTop: '0.4rem' }}>
@@ -1473,26 +1612,78 @@ export default function App() {
                           {isOpen && (
                             <div className="history-row-details">
                               {editingLogId === log.id ? (
-                                <form className="edit-log-form" onSubmit={e => handleUpdateLog(e, log)}>
-                                  <div>
-                                    <label>Session Date</label>
-                                    <input type="date" required value={editDate} onChange={e => setEditDate(e.target.value)} />
+                                <form className="edit-log-inline-form" onSubmit={e => handleUpdateLogSubmit(e, log)}>
+                                  <div className="manual-form three-col-picker">
+                                    <div>
+                                      <label>Date</label>
+                                      <input
+                                        type="date"
+                                        required
+                                        value={editLogDate}
+                                        onClick={e => e.target.showPicker && e.target.showPicker()}
+                                        onChange={e => setEditLogDate(e.target.value)}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label>Time In</label>
+                                      <input
+                                        type="time"
+                                        required
+                                        value={editLogStartTime}
+                                        onClick={e => e.target.showPicker && e.target.showPicker()}
+                                        onChange={e => setEditLogStartTime(e.target.value)}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label>Time Out</label>
+                                      <input
+                                        type="time"
+                                        required
+                                        value={editLogEndTime}
+                                        onClick={e => e.target.showPicker && e.target.showPicker()}
+                                        onChange={e => setEditLogEndTime(e.target.value)}
+                                      />
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label>Time In</label>
-                                    <input type="time" required value={editStartTime} onChange={e => setEditStartTime(e.target.value)} />
+
+                                  <div className="edit-log-options-row">
+                                    <select
+                                      className="session-select-input"
+                                      value={editLogSessionType}
+                                      onChange={e => {
+                                        const val = e.target.value
+                                        setEditLogSessionType(val)
+                                        setEditLogDeductLunch(val.includes('Full Day'))
+                                      }}
+                                    >
+                                      <option value="Full Day (-1h Lunch)">Full Day (-1h Lunch)</option>
+                                      <option value="Half Day (AM - No Lunch)">Half Day (AM - No Lunch)</option>
+                                      <option value="Half Day (PM - No Lunch)">Half Day (PM - No Lunch)</option>
+                                      <option value="Morning (AM)">Morning (AM)</option>
+                                      <option value="Afternoon (PM)">Afternoon (PM)</option>
+                                    </select>
+
+                                    <label className="checkbox-row">
+                                      <input
+                                        type="checkbox"
+                                        checked={editLogDeductLunch}
+                                        onChange={e => setEditLogDeductLunch(e.target.checked)}
+                                      />
+                                      <span>Deduct 1h unpaid lunch</span>
+                                    </label>
                                   </div>
-                                  <div>
-                                    <label>Time Out</label>
-                                    <input type="time" required value={editEndTime} onChange={e => setEditEndTime(e.target.value)} />
-                                  </div>
-                                  <label className="edit-lunch-checkbox">
-                                    <input type="checkbox" checked={editDeductLunch} onChange={e => setEditDeductLunch(e.target.checked)} />
-                                    Deduct 1-hour unpaid lunch break
-                                  </label>
-                                  <div className="edit-log-actions">
-                                    <button type="submit" className="edit-inline-btn">Save Changes</button>
-                                    <button type="button" className="cancel-inline-btn" onClick={() => setEditingLogId(null)}>Cancel</button>
+
+                                  <div className="log-action-buttons-right">
+                                    <button
+                                      type="button"
+                                      className="cancel-inline-btn"
+                                      onClick={() => setEditingLogId(null)}
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button type="submit" className="save-inline-btn">
+                                      Save Changes
+                                    </button>
                                   </div>
                                 </form>
                               ) : (
@@ -1509,11 +1700,19 @@ export default function App() {
                                     <span className="detail-lbl">Lunch Break:</span>{' '}
                                     <span>{log.deductLunchBreak ? 'Auto-deducted 1h unpaid lunch' : 'No lunch deduction (Half Day)'}</span>
                                   </div>
-                                  <div className="log-action-buttons">
-                                    <button type="button" className="edit-inline-btn" onClick={() => handleEditLog(log)}>
+                                  <div className="log-action-buttons-right">
+                                    <button
+                                      type="button"
+                                      className="edit-inline-btn"
+                                      onClick={() => startEditLog(log)}
+                                    >
                                       Edit Log
                                     </button>
-                                    <button type="button" className="delete-inline-btn" onClick={() => handleDeleteLog(log.id)}>
+                                    <button
+                                      type="button"
+                                      className="delete-inline-btn"
+                                      onClick={() => handleDeleteLog(log.id)}
+                                    >
                                       Delete Log
                                     </button>
                                   </div>
@@ -1633,6 +1832,26 @@ export default function App() {
                       onChange={e => setEditTargetHours(e.target.value)}
                     />
                   </div>
+                  <div>
+                    <label>Company Start Time (Hours count from)</label>
+                    <input
+                      type="time"
+                      required
+                      value={editWorkStart}
+                      onClick={e => e.target.showPicker && e.target.showPicker()}
+                      onChange={e => setEditWorkStart(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label>Company End Time</label>
+                    <input
+                      type="time"
+                      required
+                      value={editWorkEnd}
+                      onClick={e => e.target.showPicker && e.target.showPicker()}
+                      onChange={e => setEditWorkEnd(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <button type="submit" className="edit-profile-btn" style={{ marginTop: '1rem' }}>
                   Save Changes
@@ -1657,12 +1876,15 @@ export default function App() {
               <div className="card profile-stat-card">
                 <div className="profile-stat-icon blue-icon-box">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+                    <line x1="16" x2="16" y1="2" y2="6" />
+                    <line x1="8" x2="8" y1="2" y2="6" />
+                    <line x1="3" x2="21" y1="10" y2="10" />
                   </svg>
                 </div>
                 <div>
-                  <div className="profile-stat-label">ACCOUNT STATUS</div>
-                  <div className="profile-stat-value">Active</div>
+                  <div className="profile-stat-label">COMPANY WORKING HOURS</div>
+                  <div className="profile-stat-value">{user.workStartTime || '08:00'} – {user.workEndTime || '17:00'}</div>
                 </div>
               </div>
             </div>

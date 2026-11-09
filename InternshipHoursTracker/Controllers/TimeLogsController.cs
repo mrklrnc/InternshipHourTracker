@@ -56,10 +56,44 @@ public class TimeLogsController : ControllerBase
         return (true, null);
     }
 
-    private static double CalculateHours(DateTime timeIn, DateTime timeOut, bool deductLunch)
+    private static double CalculateHours(
+        DateTime timeIn,
+        DateTime timeOut,
+        bool deductLunch,
+        string? workStartTime = "08:00",
+        string? workEndTime = "17:00",
+        int? tzOffsetMinutes = null)
     {
-        double rawHours = (timeOut - timeIn).TotalHours;
-        if (deductLunch)
+        // Convert UTC timestamps into the user's local timezone (defaulting to UTC+8 / Philippines if not provided)
+        var offset = TimeSpan.FromMinutes(tzOffsetMinutes.HasValue ? -tzOffsetMinutes.Value : 480);
+        var localIn = timeIn.Kind == DateTimeKind.Utc ? timeIn.Add(offset) : timeIn;
+        var localOut = timeOut.Kind == DateTimeKind.Utc ? timeOut.Add(offset) : timeOut;
+
+        var effectiveIn = localIn;
+        var effectiveOut = localOut;
+
+        if (TimeSpan.TryParse(workStartTime ?? "08:00", out var scheduleStart))
+        {
+            var scheduledStartDateTime = localIn.Date.Add(scheduleStart);
+            // If user clocked in early (e.g. 7:30 AM before 8:00 AM), count only starting from 8:00 AM
+            if (effectiveIn < scheduledStartDateTime)
+            {
+                effectiveIn = scheduledStartDateTime;
+            }
+        }
+
+        if (TimeSpan.TryParse(workEndTime ?? "17:00", out var scheduleEnd))
+        {
+            var scheduledEndDateTime = localOut.Date.Add(scheduleEnd);
+            // Cap at official end of company shift (e.g. 5:00 PM) if same day
+            if (localOut.Date == localIn.Date && effectiveOut > scheduledEndDateTime)
+            {
+                effectiveOut = scheduledEndDateTime;
+            }
+        }
+
+        double rawHours = (effectiveOut - effectiveIn).TotalHours;
+        if (deductLunch && rawHours > 0)
         {
             rawHours -= 1.0;
         }
@@ -171,7 +205,10 @@ public class TimeLogsController : ControllerBase
     // POST: api/timelogs/time-out/{userId}
     [HttpPost("time-out/{userId:length(24)}")]
     [EnableRateLimiting("StrictPolicy")]
-    public async Task<ActionResult<TimeLog>> TimeOut(string userId, [FromQuery] bool deductLunch = false)
+    public async Task<ActionResult<TimeLog>> TimeOut(
+        string userId,
+        [FromQuery] bool deductLunch = false,
+        [FromQuery] int? tzOffsetMinutes = null)
     {
         if (!IsAuthorizedOwner(userId))
             return Forbid();
@@ -180,6 +217,7 @@ public class TimeLogsController : ControllerBase
         if (activeLog is null || activeLog.Id is null)
             return BadRequest(new { message = "No active time-in session found for this user." });
 
+        var user = await _mongoDbService.GetUserByIdAsync(userId);
         var timeOutTimestamp = DateTime.UtcNow;
 
         // Server-Side Data Validation: TimeOut > TimeIn and Duration <= 24 hours
@@ -189,7 +227,13 @@ public class TimeLogsController : ControllerBase
 
         activeLog.TimeOut = timeOutTimestamp;
         activeLog.DeductLunchBreak = deductLunch;
-        activeLog.HoursLogged = CalculateHours(activeLog.TimeIn, timeOutTimestamp, deductLunch);
+        activeLog.HoursLogged = CalculateHours(
+            activeLog.TimeIn,
+            timeOutTimestamp,
+            deductLunch,
+            user?.WorkStartTime,
+            user?.WorkEndTime,
+            tzOffsetMinutes);
 
         await _mongoDbService.UpdateTimeLogAsync(activeLog.Id, activeLog);
         return Ok(activeLog);
@@ -198,10 +242,14 @@ public class TimeLogsController : ControllerBase
     // POST: api/timelogs (Manual entry)
     [HttpPost]
     [EnableRateLimiting("StrictPolicy")]
-    public async Task<ActionResult<TimeLog>> CreateManual([FromBody] TimeLog newTimeLog)
+    public async Task<ActionResult<TimeLog>> CreateManual(
+        [FromBody] TimeLog newTimeLog,
+        [FromQuery] int? tzOffsetMinutes = null)
     {
         if (!IsAuthorizedOwner(newTimeLog.UserId))
             return Forbid();
+
+        var user = await _mongoDbService.GetUserByIdAsync(newTimeLog.UserId);
 
         if (newTimeLog.TimeOut.HasValue)
         {
@@ -212,7 +260,10 @@ public class TimeLogsController : ControllerBase
             newTimeLog.HoursLogged = CalculateHours(
                 newTimeLog.TimeIn,
                 newTimeLog.TimeOut.Value,
-                newTimeLog.DeductLunchBreak);
+                newTimeLog.DeductLunchBreak,
+                user?.WorkStartTime,
+                user?.WorkEndTime,
+                tzOffsetMinutes);
         }
 
         if (string.IsNullOrWhiteSpace(newTimeLog.SessionType))
@@ -226,7 +277,10 @@ public class TimeLogsController : ControllerBase
 
     // PUT: api/timelogs/{id}
     [HttpPut("{id:length(24)}")]
-    public async Task<IActionResult> Update(string id, [FromBody] TimeLog updatedTimeLog)
+    public async Task<IActionResult> Update(
+        string id,
+        [FromBody] TimeLog updatedTimeLog,
+        [FromQuery] int? tzOffsetMinutes = null)
     {
         var existingLog = await _mongoDbService.GetTimeLogByIdAsync(id);
         if (existingLog is null)
@@ -235,6 +289,7 @@ public class TimeLogsController : ControllerBase
         if (!IsAuthorizedOwner(existingLog.UserId))
             return Forbid();
 
+        var user = await _mongoDbService.GetUserByIdAsync(existingLog.UserId);
         updatedTimeLog.Id = existingLog.Id;
 
         if (updatedTimeLog.TimeOut.HasValue)
@@ -246,7 +301,10 @@ public class TimeLogsController : ControllerBase
             updatedTimeLog.HoursLogged = CalculateHours(
                 updatedTimeLog.TimeIn,
                 updatedTimeLog.TimeOut.Value,
-                updatedTimeLog.DeductLunchBreak);
+                updatedTimeLog.DeductLunchBreak,
+                user?.WorkStartTime,
+                user?.WorkEndTime,
+                tzOffsetMinutes);
         }
 
         await _mongoDbService.UpdateTimeLogAsync(id, updatedTimeLog);
