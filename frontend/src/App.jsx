@@ -63,6 +63,16 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const LOGS_PER_PAGE = 10
 
+  // Real-time Live Clock State
+  const [currentTime, setCurrentTime] = useState(() => new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   // Session Type Selector: 'full' | 'half-am' | 'half-pm'
   const [sessionMode, setSessionMode] = useState('full')
 
@@ -1158,6 +1168,20 @@ export default function App() {
   const displayHandle = `@${(user.username || 'intern').toLowerCase().replace(/\s+/g, '')}`
   const displayEmail = user.email || `${(user.username || 'intern').toLowerCase().replace(/\s+/g, '')}@university.edu`
 
+  // Live Digital Clock formatters
+  const currentHours = currentTime.getHours()
+  const displayHours = String(currentHours % 12 || 12).padStart(2, '0')
+  const displayMinutes = String(currentTime.getMinutes()).padStart(2, '0')
+  const displaySeconds = String(currentTime.getSeconds()).padStart(2, '0')
+  const ampm = currentHours >= 12 ? 'PM' : 'AM'
+  const formattedLiveDate = currentTime.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  })
+  const timeZoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time'
+
   return (
     <div className={darkMode ? 'app-shell' : 'app-shell light-mode'}>
       {/* TOP NAVIGATION BAR */}
@@ -1223,7 +1247,7 @@ export default function App() {
         {activeNav === 'dashboard' && (
           <>
             <header className="card topbar-card">
-              <div>
+              <div className="topbar-user-info">
                 <h1>Internship Hours Tracker</h1>
                 <span className="user-badge">Logged in as <strong>{displayFullName}</strong></span>
               </div>
@@ -1236,6 +1260,85 @@ export default function App() {
                 <span>Sign Out</span>
               </button>
             </header>
+
+            {/* LIVE TIME CLOCK (Digital hours, minutes, seconds) */}
+            <section className="card live-clock-card">
+              <div className="live-clock-header">
+                <div className="live-clock-title-wrap">
+                  <div className="live-clock-icon-box">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2>Live Time Clock</h2>
+                    <span className="live-clock-subtitle">Synchronized real-time attendance clock</span>
+                  </div>
+                </div>
+                <div className="live-clock-badge">
+                  <span className="dot dot-green-pulse" />
+                  <span className="live-text">LIVE</span>
+                  <span className="live-tz-pill">{timeZoneName}</span>
+                </div>
+              </div>
+
+              <div className="live-clock-body">
+                <div className="live-clock-digits-container">
+                  <div className="digit-unit">
+                    <div className="digit-card">
+                      <span className="digit-number">{displayHours}</span>
+                    </div>
+                    <span className="digit-caption">HOURS</span>
+                  </div>
+
+                  <div className="digit-separator" aria-hidden="true">
+                    <span className="colon-dot" />
+                    <span className="colon-dot" />
+                  </div>
+
+                  <div className="digit-unit">
+                    <div className="digit-card">
+                      <span className="digit-number">{displayMinutes}</span>
+                    </div>
+                    <span className="digit-caption">MINUTES</span>
+                  </div>
+
+                  <div className="digit-separator" aria-hidden="true">
+                    <span className="colon-dot" />
+                    <span className="colon-dot" />
+                  </div>
+
+                  <div className="digit-unit">
+                    <div className="digit-card digit-card-seconds">
+                      <span className="digit-number digit-seconds">{displaySeconds}</span>
+                    </div>
+                    <span className="digit-caption">SECONDS</span>
+                  </div>
+
+                  <div className="period-box">
+                    <span className="period-badge">{ampm}</span>
+                  </div>
+                </div>
+
+                <div className="live-clock-footer">
+                  <div className="live-clock-date">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <span>{formattedLiveDate}</span>
+                  </div>
+                  <div className="live-clock-meta">
+                    <span className="shift-indicator">
+                      Company Shift: <strong>{user.workStartTime || '08:00'} – {user.workEndTime || '17:00'}</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </section>
 
             <section className="card progress-section-card">
               <h2>Overall Progress</h2>
@@ -1305,7 +1408,7 @@ export default function App() {
 
             <section className="card clock-section-card">
               <div className="clock-card-header">
-                <h2>Live Time Clock</h2>
+                <h2>Attendance Punch</h2>
                 <div className={isClockedIn ? 'status-pill-emerald' : 'status-pill-outline'}>
                   <span className={isClockedIn ? 'dot dot-green-pulse' : 'dot dot-slate'} />
                   <span>
