@@ -36,5 +36,9 @@ public class User
     public string? PasswordResetCode { get; set; }
 
     public DateTime? PasswordResetExpiry { get; set; }
+
+    public string? GoogleId { get; set; }
+
+    public string? ProfilePicture { get; set; }
 }
 

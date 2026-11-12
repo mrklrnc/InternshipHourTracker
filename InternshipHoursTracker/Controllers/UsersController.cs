@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using InternshipHoursTracker.Models;
 using InternshipHoursTracker.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -291,9 +293,125 @@ public class UsersController : ControllerBase
         await _mongoDbService.DeleteUserAsync(id);
         return NoContent();
     }
+
+    // POST: api/users/google-login
+    [HttpPost("google-login")]
+    [EnableRateLimiting("StrictPolicy")]
+    public async Task<ActionResult> GoogleLogin([FromBody] GoogleLoginRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Credential))
+            return BadRequest(new { message = "Google credential token is required." });
+
+        try
+        {
+            var parts = request.Credential.Split('.');
+            if (parts.Length != 3)
+                return BadRequest(new { message = "Invalid Google token format." });
+
+            string payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
+            using var doc = JsonDocument.Parse(payloadJson);
+            var root = doc.RootElement;
+
+            string? aud = root.TryGetProperty("aud", out var audProp) ? audProp.GetString() : null;
+            long exp = root.TryGetProperty("exp", out var expProp) ? expProp.GetInt64() : 0;
+            string? email = root.TryGetProperty("email", out var emailProp) ? emailProp.GetString() : null;
+            string? name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
+            string? sub = root.TryGetProperty("sub", out var subProp) ? subProp.GetString() : null;
+            string? picture = root.TryGetProperty("picture", out var picProp) ? picProp.GetString() : null;
+
+            string expectedClientId = _configuration["GoogleAuth:ClientId"]
+                ?? "548680570260-m6gedf8u8itm7209atn1q6iqok6lvpj7.apps.googleusercontent.com";
+
+            if (aud != expectedClientId)
+                return BadRequest(new { message = "Google authentication failed: Client ID mismatch." });
+
+            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp)
+                return BadRequest(new { message = "Google token has expired. Please sign in again." });
+
+            if (string.IsNullOrWhiteSpace(email))
+                return BadRequest(new { message = "Google account did not provide a verified email." });
+
+            var user = await _mongoDbService.GetUserByEmailAsync(email)
+                       ?? await _mongoDbService.GetUserByUsernameAsync(email);
+
+            if (user == null)
+            {
+                string baseUsername = email.Split('@')[0];
+                var existingUsername = await _mongoDbService.GetUserByUsernameAsync(baseUsername);
+                string username = existingUsername != null
+                    ? $"{baseUsername}_{RandomNumberGenerator.GetInt32(100, 999)}"
+                    : baseUsername;
+
+                user = new User
+                {
+                    Email = email,
+                    Username = username,
+                    FullName = !string.IsNullOrWhiteSpace(name) ? name : baseUsername,
+                    Password = Guid.NewGuid().ToString("N"),
+                    GoogleId = sub,
+                    ProfilePicture = picture,
+                    IsEmailVerified = true,
+                    TargetHours = 400,
+                    WorkStartTime = "08:00",
+                    WorkEndTime = "17:00"
+                };
+
+                await _mongoDbService.CreateUserAsync(user);
+            }
+            else
+            {
+                bool updated = false;
+                if (!user.IsEmailVerified)
+                {
+                    user.IsEmailVerified = true;
+                    user.VerificationCode = null;
+                    user.VerificationCodeExpiry = null;
+                    updated = true;
+                }
+                if (string.IsNullOrEmpty(user.GoogleId) && !string.IsNullOrWhiteSpace(sub))
+                {
+                    user.GoogleId = sub;
+                    updated = true;
+                }
+                if (string.IsNullOrEmpty(user.FullName) && !string.IsNullOrWhiteSpace(name))
+                {
+                    user.FullName = name;
+                    updated = true;
+                }
+                if (string.IsNullOrEmpty(user.ProfilePicture) && !string.IsNullOrWhiteSpace(picture))
+                {
+                    user.ProfilePicture = picture;
+                    updated = true;
+                }
+                if (updated && user.Id != null)
+                {
+                    await _mongoDbService.UpdateUserAsync(user.Id, user);
+                }
+            }
+
+            AttachJwtToken(user);
+            return Ok(user);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = $"Google Sign-In failed: {ex.Message}" });
+        }
+    }
+
+    private static byte[] Base64UrlDecode(string input)
+    {
+        string base64 = input.Replace('-', '+').Replace('_', '/');
+        switch (base64.Length % 4)
+        {
+            case 2: base64 += "=="; break;
+            case 3: base64 += "="; break;
+        }
+        return Convert.FromBase64String(base64);
+    }
 }
 
 public record LoginRequest(string Username, string Password);
+public record GoogleLoginRequest(string Credential);
 public record VerifyEmailRequest(string Email, string Code);
 public record ResendVerificationRequest(string Email);
 public record ForgotPasswordRequest(string EmailOrUsername);
