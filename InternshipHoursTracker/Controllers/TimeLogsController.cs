@@ -155,6 +155,8 @@ public class TimeLogsController : ControllerBase
             ? Math.Round(Math.Min(100, (totalHoursLogged / user.TargetHours) * 100), 2)
             : 0;
 
+        bool isOnLunch = activeLog is not null && activeLog.AmTimeOut is not null && activeLog.PmTimeIn is null;
+
         return Ok(new
         {
             userId = user.Id,
@@ -166,6 +168,7 @@ public class TimeLogsController : ControllerBase
             completedDays,
             progressPercentage,
             isCurrentlyClockedIn = activeLog is not null,
+            isOnLunch,
             activeTimeLog = activeLog,
             totalSessions = logs.Count
         });
@@ -202,6 +205,59 @@ public class TimeLogsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = newLog.Id }, newLog);
     }
 
+    // POST: api/timelogs/lunch-out/{userId}
+    [HttpPost("lunch-out/{userId:length(24)}")]
+    [EnableRateLimiting("StrictPolicy")]
+    public async Task<ActionResult<TimeLog>> LunchOut(
+        string userId,
+        [FromQuery] int? tzOffsetMinutes = null)
+    {
+        if (!IsAuthorizedOwner(userId))
+            return Forbid();
+
+        var activeLog = await _mongoDbService.GetActiveTimeLogByUserIdAsync(userId);
+        if (activeLog is null || activeLog.Id is null)
+            return BadRequest(new { message = "No active time-in session found for this user." });
+
+        if (activeLog.AmTimeOut.HasValue)
+            return BadRequest(new { message = "User has already clocked out for lunch." });
+
+        var now = DateTime.UtcNow;
+        var (isValid, validationError) = ValidateShiftTimestamps(activeLog.TimeIn, now);
+        if (!isValid)
+            return BadRequest(new { message = validationError });
+
+        activeLog.AmTimeOut = now;
+        await _mongoDbService.UpdateTimeLogAsync(activeLog.Id, activeLog);
+        return Ok(activeLog);
+    }
+
+    // POST: api/timelogs/lunch-in/{userId}
+    [HttpPost("lunch-in/{userId:length(24)}")]
+    [EnableRateLimiting("StrictPolicy")]
+    public async Task<ActionResult<TimeLog>> LunchIn(
+        string userId,
+        [FromQuery] int? tzOffsetMinutes = null)
+    {
+        if (!IsAuthorizedOwner(userId))
+            return Forbid();
+
+        var activeLog = await _mongoDbService.GetActiveTimeLogByUserIdAsync(userId);
+        if (activeLog is null || activeLog.Id is null)
+            return BadRequest(new { message = "No active time-in session found for this user." });
+
+        if (!activeLog.AmTimeOut.HasValue)
+            return BadRequest(new { message = "You must time out for lunch before timing back in." });
+
+        if (activeLog.PmTimeIn.HasValue)
+            return BadRequest(new { message = "User has already timed back in from lunch." });
+
+        var now = DateTime.UtcNow;
+        activeLog.PmTimeIn = now;
+        await _mongoDbService.UpdateTimeLogAsync(activeLog.Id, activeLog);
+        return Ok(activeLog);
+    }
+
     // POST: api/timelogs/time-out/{userId}
     [HttpPost("time-out/{userId:length(24)}")]
     [EnableRateLimiting("StrictPolicy")]
@@ -220,20 +276,65 @@ public class TimeLogsController : ControllerBase
         var user = await _mongoDbService.GetUserByIdAsync(userId);
         var timeOutTimestamp = DateTime.UtcNow;
 
-        // Server-Side Data Validation: TimeOut > TimeIn and Duration <= 24 hours
-        var (isValid, validationError) = ValidateShiftTimestamps(activeLog.TimeIn, timeOutTimestamp);
-        if (!isValid)
-            return BadRequest(new { message = validationError });
+        // Case 1: 4-Punch DTR (AM TimeIn/AmTimeOut + PM PmTimeIn/TimeOut)
+        if (activeLog.AmTimeOut.HasValue && activeLog.PmTimeIn.HasValue)
+        {
+            var (isValid, validationError) = ValidateShiftTimestamps(activeLog.PmTimeIn.Value, timeOutTimestamp);
+            if (!isValid)
+                return BadRequest(new { message = validationError });
 
-        activeLog.TimeOut = timeOutTimestamp;
-        activeLog.DeductLunchBreak = deductLunch;
-        activeLog.HoursLogged = CalculateHours(
-            activeLog.TimeIn,
-            timeOutTimestamp,
-            deductLunch,
-            user?.WorkStartTime,
-            user?.WorkEndTime,
-            tzOffsetMinutes);
+            activeLog.TimeOut = timeOutTimestamp;
+            activeLog.DeductLunchBreak = false; // Explicitly punched lunch, no double deduction
+
+            double morningHours = CalculateHours(
+                activeLog.TimeIn,
+                activeLog.AmTimeOut.Value,
+                deductLunch: false,
+                user?.WorkStartTime ?? "08:00",
+                "12:00",
+                tzOffsetMinutes);
+
+            double afternoonHours = CalculateHours(
+                activeLog.PmTimeIn.Value,
+                timeOutTimestamp,
+                deductLunch: false,
+                "13:00",
+                user?.WorkEndTime ?? "17:00",
+                tzOffsetMinutes);
+
+            activeLog.HoursLogged = Math.Round(morningHours + afternoonHours, 2);
+        }
+        // Case 2: User timed out for lunch and ends shift without returning in afternoon (Half Day AM)
+        else if (activeLog.AmTimeOut.HasValue && !activeLog.PmTimeIn.HasValue)
+        {
+            activeLog.TimeOut = activeLog.AmTimeOut.Value;
+            activeLog.DeductLunchBreak = false;
+            activeLog.SessionType = "Half Day (AM - No Lunch)";
+            activeLog.HoursLogged = CalculateHours(
+                activeLog.TimeIn,
+                activeLog.AmTimeOut.Value,
+                deductLunch: false,
+                user?.WorkStartTime ?? "08:00",
+                "12:00",
+                tzOffsetMinutes);
+        }
+        // Case 3: Standard single session (continuous, with or without auto-deducted lunch)
+        else
+        {
+            var (isValid, validationError) = ValidateShiftTimestamps(activeLog.TimeIn, timeOutTimestamp);
+            if (!isValid)
+                return BadRequest(new { message = validationError });
+
+            activeLog.TimeOut = timeOutTimestamp;
+            activeLog.DeductLunchBreak = deductLunch;
+            activeLog.HoursLogged = CalculateHours(
+                activeLog.TimeIn,
+                timeOutTimestamp,
+                deductLunch,
+                user?.WorkStartTime,
+                user?.WorkEndTime,
+                tzOffsetMinutes);
+        }
 
         await _mongoDbService.UpdateTimeLogAsync(activeLog.Id, activeLog);
         return Ok(activeLog);
@@ -253,17 +354,46 @@ public class TimeLogsController : ControllerBase
 
         if (newTimeLog.TimeOut.HasValue)
         {
-            var (isValid, validationError) = ValidateShiftTimestamps(newTimeLog.TimeIn, newTimeLog.TimeOut.Value);
-            if (!isValid)
-                return BadRequest(new { message = validationError });
+            if (newTimeLog.AmTimeOut.HasValue && newTimeLog.PmTimeIn.HasValue)
+            {
+                var (isValidAm, valErrAm) = ValidateShiftTimestamps(newTimeLog.TimeIn, newTimeLog.AmTimeOut.Value);
+                if (!isValidAm) return BadRequest(new { message = valErrAm });
 
-            newTimeLog.HoursLogged = CalculateHours(
-                newTimeLog.TimeIn,
-                newTimeLog.TimeOut.Value,
-                newTimeLog.DeductLunchBreak,
-                user?.WorkStartTime,
-                user?.WorkEndTime,
-                tzOffsetMinutes);
+                var (isValidPm, valErrPm) = ValidateShiftTimestamps(newTimeLog.PmTimeIn.Value, newTimeLog.TimeOut.Value);
+                if (!isValidPm) return BadRequest(new { message = valErrPm });
+
+                double morningHours = CalculateHours(
+                    newTimeLog.TimeIn,
+                    newTimeLog.AmTimeOut.Value,
+                    deductLunch: false,
+                    user?.WorkStartTime ?? "08:00",
+                    "12:00",
+                    tzOffsetMinutes);
+
+                double afternoonHours = CalculateHours(
+                    newTimeLog.PmTimeIn.Value,
+                    newTimeLog.TimeOut.Value,
+                    deductLunch: false,
+                    "13:00",
+                    user?.WorkEndTime ?? "17:00",
+                    tzOffsetMinutes);
+
+                newTimeLog.HoursLogged = Math.Round(morningHours + afternoonHours, 2);
+            }
+            else
+            {
+                var (isValid, validationError) = ValidateShiftTimestamps(newTimeLog.TimeIn, newTimeLog.TimeOut.Value);
+                if (!isValid)
+                    return BadRequest(new { message = validationError });
+
+                newTimeLog.HoursLogged = CalculateHours(
+                    newTimeLog.TimeIn,
+                    newTimeLog.TimeOut.Value,
+                    newTimeLog.DeductLunchBreak,
+                    user?.WorkStartTime,
+                    user?.WorkEndTime,
+                    tzOffsetMinutes);
+            }
         }
 
         if (string.IsNullOrWhiteSpace(newTimeLog.SessionType))
@@ -294,17 +424,46 @@ public class TimeLogsController : ControllerBase
 
         if (updatedTimeLog.TimeOut.HasValue)
         {
-            var (isValid, validationError) = ValidateShiftTimestamps(updatedTimeLog.TimeIn, updatedTimeLog.TimeOut.Value);
-            if (!isValid)
-                return BadRequest(new { message = validationError });
+            if (updatedTimeLog.AmTimeOut.HasValue && updatedTimeLog.PmTimeIn.HasValue)
+            {
+                var (isValidAm, valErrAm) = ValidateShiftTimestamps(updatedTimeLog.TimeIn, updatedTimeLog.AmTimeOut.Value);
+                if (!isValidAm) return BadRequest(new { message = valErrAm });
 
-            updatedTimeLog.HoursLogged = CalculateHours(
-                updatedTimeLog.TimeIn,
-                updatedTimeLog.TimeOut.Value,
-                updatedTimeLog.DeductLunchBreak,
-                user?.WorkStartTime,
-                user?.WorkEndTime,
-                tzOffsetMinutes);
+                var (isValidPm, valErrPm) = ValidateShiftTimestamps(updatedTimeLog.PmTimeIn.Value, updatedTimeLog.TimeOut.Value);
+                if (!isValidPm) return BadRequest(new { message = valErrPm });
+
+                double morningHours = CalculateHours(
+                    updatedTimeLog.TimeIn,
+                    updatedTimeLog.AmTimeOut.Value,
+                    deductLunch: false,
+                    user?.WorkStartTime ?? "08:00",
+                    "12:00",
+                    tzOffsetMinutes);
+
+                double afternoonHours = CalculateHours(
+                    updatedTimeLog.PmTimeIn.Value,
+                    updatedTimeLog.TimeOut.Value,
+                    deductLunch: false,
+                    "13:00",
+                    user?.WorkEndTime ?? "17:00",
+                    tzOffsetMinutes);
+
+                updatedTimeLog.HoursLogged = Math.Round(morningHours + afternoonHours, 2);
+            }
+            else
+            {
+                var (isValid, validationError) = ValidateShiftTimestamps(updatedTimeLog.TimeIn, updatedTimeLog.TimeOut.Value);
+                if (!isValid)
+                    return BadRequest(new { message = validationError });
+
+                updatedTimeLog.HoursLogged = CalculateHours(
+                    updatedTimeLog.TimeIn,
+                    updatedTimeLog.TimeOut.Value,
+                    updatedTimeLog.DeductLunchBreak,
+                    user?.WorkStartTime,
+                    user?.WorkEndTime,
+                    tzOffsetMinutes);
+            }
         }
 
         await _mongoDbService.UpdateTimeLogAsync(id, updatedTimeLog);

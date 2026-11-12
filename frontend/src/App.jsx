@@ -615,6 +615,46 @@ export default function App() {
     }
   }
 
+  async function handleLunchOut() {
+    if (!user) return
+    setError('')
+    const tzOffset = new Date().getTimezoneOffset()
+    try {
+      const res = await fetch(
+        `${API_BASE}/timelogs/lunch-out/${user.id}?tzOffsetMinutes=${tzOffset}`,
+        { method: 'POST', headers: getAuthHeaders() }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.message || 'Failed to record lunch time-out.')
+      } else {
+        await fetchDashboard(user.id)
+      }
+    } catch {
+      setError('Failed to reach backend API.')
+    }
+  }
+
+  async function handleLunchIn() {
+    if (!user) return
+    setError('')
+    const tzOffset = new Date().getTimezoneOffset()
+    try {
+      const res = await fetch(
+        `${API_BASE}/timelogs/lunch-in/${user.id}?tzOffsetMinutes=${tzOffset}`,
+        { method: 'POST', headers: getAuthHeaders() }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.message || 'Failed to record return from lunch.')
+      } else {
+        await fetchDashboard(user.id)
+      }
+    } catch {
+      setError('Failed to reach backend API.')
+    }
+  }
+
   async function handleManualSubmit(e) {
     e.preventDefault()
     if (!manualDate || !manualStartTime || !manualEndTime) return
@@ -1287,6 +1327,12 @@ export default function App() {
   const completedDays = summary?.completedDays ?? Math.round((totalHrs / 8) * 10) / 10
   const remainingDays = summary?.remainingDays ?? Math.round((remainingHrs / 8) * 10) / 10
   const isClockedIn = summary?.isCurrentlyClockedIn
+  const activeLog = summary?.activeTimeLog
+  const hasAmLunchOut = Boolean(activeLog?.amTimeOut)
+  const hasPmLunchIn = Boolean(activeLog?.pmTimeIn)
+  const isOnLunch = Boolean(summary?.isOnLunch || (hasAmLunchOut && !hasPmLunchIn))
+  const isAfternoonActive = Boolean(hasAmLunchOut && hasPmLunchIn && !activeLog?.timeOut)
+  const isMorningActive = Boolean(isClockedIn && !hasAmLunchOut)
   const estShort = getEstimatedCompletionShort(remainingDays)
 
   const radius = 58
@@ -1588,22 +1634,58 @@ export default function App() {
             <section className="card clock-section-card">
               <div className="clock-card-header">
                 <h2>Attendance Punch</h2>
-                <div className={isClockedIn ? 'status-pill-emerald' : 'status-pill-outline'}>
-                  <span className={isClockedIn ? 'dot dot-green-pulse' : 'dot dot-slate'} />
+                <div className={
+                  isOnLunch
+                    ? 'status-pill-amber'
+                    : isClockedIn
+                    ? 'status-pill-emerald'
+                    : 'status-pill-outline'
+                }>
+                  <span className={
+                    isOnLunch
+                      ? 'dot dot-amber-pulse'
+                      : isClockedIn
+                      ? 'dot dot-green-pulse'
+                      : 'dot dot-slate'
+                  } />
                   <span>
-                    {isClockedIn
-                      ? `Clocked In (${summary?.activeTimeLog?.sessionType || 'Active'})`
+                    {isOnLunch
+                      ? 'On Lunch Break'
+                      : isAfternoonActive
+                      ? 'Clocked In (Afternoon Duty)'
+                      : isMorningActive
+                      ? 'Clocked In (Morning Duty)'
+                      : isClockedIn
+                      ? `Clocked In (${activeLog?.sessionType || 'Active'})`
                       : 'Clocked Out (Off Duty)'}
                   </span>
                 </div>
               </div>
 
-              {summary?.activeTimeLog && (
+              {activeLog && (
                 <p className="active-since">
-                  Session started at {new Date(summary.activeTimeLog.timeIn).toLocaleTimeString()}{' '}
-                  <span className="official-hours-muted">
-                    • Official Company Hours: {user.workStartTime || '08:00'} – {user.workEndTime || '17:00'}
-                  </span>
+                  {isOnLunch ? (
+                    <>
+                      🍽️ Lunch break started at <strong>{new Date(activeLog.amTimeOut).toLocaleTimeString()}</strong>
+                      <span className="official-hours-muted">
+                        {' '}• Morning shift: {new Date(activeLog.timeIn).toLocaleTimeString()} to {new Date(activeLog.amTimeOut).toLocaleTimeString()}
+                      </span>
+                    </>
+                  ) : isAfternoonActive ? (
+                    <>
+                      ⚡ Afternoon shift started at <strong>{new Date(activeLog.pmTimeIn).toLocaleTimeString()}</strong>
+                      <span className="official-hours-muted">
+                        {' '}• Morning: {new Date(activeLog.timeIn).toLocaleTimeString()} to {new Date(activeLog.amTimeOut).toLocaleTimeString()}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      Session started at <strong>{new Date(activeLog.timeIn).toLocaleTimeString()}</strong>{' '}
+                      <span className="official-hours-muted">
+                        • Official Company Hours: {user.workStartTime || '08:00'} – {user.workEndTime || '17:00'}
+                      </span>
+                    </>
+                  )}
                 </p>
               )}
 
@@ -1720,7 +1802,7 @@ export default function App() {
                         handleTimeIn(
                           sessionMode === 'half-am'
                             ? 'Half Day (AM - No Lunch)'
-                            : 'Morning (AM)'
+                            : 'Full Day (AM + PM)'
                         )
                       }
                       className="wide-btn sapphire-primary-btn"
@@ -1729,39 +1811,71 @@ export default function App() {
                         <polygon points="5 3 19 12 5 21 5 3" />
                       </svg>
                       <span>
-                        {sessionMode === 'half-am' ? 'Morning Time In (Half Day AM)' : 'Morning Time In'}
+                        {sessionMode === 'half-am' ? 'Morning Time In (Half Day AM)' : 'Morning Time In (AM)'}
                       </span>
                     </button>
                   )}
 
-                  {(sessionMode === 'full' || sessionMode === 'half-pm') && (
+                  {sessionMode === 'half-pm' && (
                     <button
                       type="button"
-                      onClick={() =>
-                        handleTimeIn(
-                          sessionMode === 'half-pm'
-                            ? 'Half Day (PM - No Lunch)'
-                            : 'Afternoon (PM)'
-                        )
-                      }
-                      className={sessionMode === 'half-pm' ? 'wide-btn sapphire-primary-btn' : 'wide-btn slate-ghost-btn'}
+                      onClick={() => handleTimeIn('Half Day (PM - No Lunch)')}
+                      className="wide-btn sapphire-primary-btn"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" />
                         <polyline points="12 6 12 12 16 14" />
                       </svg>
-                      <span>
-                        {sessionMode === 'half-pm' ? 'Afternoon Time In (Half Day PM)' : 'Back from Lunch (PM)'}
-                      </span>
+                      <span>Afternoon Time In (Half Day PM)</span>
                     </button>
                   )}
+                </div>
+              ) : isOnLunch ? (
+                <div className="wide-action-stack">
+                  <button
+                    type="button"
+                    onClick={handleLunchIn}
+                    className="wide-btn sapphire-primary-btn"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    <span>Back from Lunch (PM Time In)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTimeOut(false)}
+                    className="wide-btn slate-ghost-btn"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" x2="9" y1="12" y2="12" />
+                    </svg>
+                    <span>End Shift Early (Morning Only)</span>
+                  </button>
+                </div>
+              ) : isAfternoonActive ? (
+                <div className="wide-action-stack">
+                  <button
+                    type="button"
+                    onClick={() => handleTimeOut(false)}
+                    className="wide-btn sapphire-primary-btn"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" x2="9" y1="12" y2="12" />
+                    </svg>
+                    <span>End of Shift Time Out (PM Out)</span>
+                  </button>
                 </div>
               ) : (
                 <div className="wide-action-stack">
                   {sessionMode === 'full' && (
                     <button
                       type="button"
-                      onClick={() => handleTimeOut(false)}
+                      onClick={handleLunchOut}
                       className="wide-btn slate-ghost-btn"
                     >
                       {/* Coffee Cup Icon */}
@@ -1772,7 +1886,7 @@ export default function App() {
                         <line x1="10" x2="10" y1="2" y2="4" />
                         <line x1="14" x2="14" y1="2" y2="4" />
                       </svg>
-                      <span>Time Out for Lunch (1 hr unpaid)</span>
+                      <span>Time Out for Lunch (AM Out)</span>
                     </button>
                   )}
                   <button
@@ -1788,14 +1902,16 @@ export default function App() {
                     </svg>
                     <span>End of Shift Time Out</span>
                   </button>
-                  <label className="checkbox-row" style={{ marginTop: '0.4rem' }}>
-                    <input
-                      type="checkbox"
-                      checked={liveDeductLunch}
-                      onChange={e => setLiveDeductLunch(e.target.checked)}
-                    />
-                    <span>Deduct 1-hour unpaid lunch break from this shift</span>
-                  </label>
+                  {sessionMode === 'full' && (
+                    <label className="checkbox-row" style={{ marginTop: '0.4rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={liveDeductLunch}
+                        onChange={e => setLiveDeductLunch(e.target.checked)}
+                      />
+                      <span>Auto-deduct 1-hour unpaid lunch break if continuous shift</span>
+                    </label>
+                  )}
                 </div>
               )}
 
@@ -2018,18 +2134,37 @@ export default function App() {
                                 </form>
                               ) : (
                                 <div className="detail-grid">
-                                  <div>
-                                    <span className="detail-lbl">Time In:</span>{' '}
-                                    <strong>{new Date(log.timeIn).toLocaleTimeString()}</strong>
-                                  </div>
-                                  <div>
-                                    <span className="detail-lbl">Time Out:</span>{' '}
-                                    <strong>{log.timeOut ? new Date(log.timeOut).toLocaleTimeString() : 'In progress...'}</strong>
-                                  </div>
-                                  <div>
-                                    <span className="detail-lbl">Lunch Break:</span>{' '}
-                                    <span>{log.deductLunchBreak ? 'Auto-deducted 1h unpaid lunch' : 'No lunch deduction (Half Day)'}</span>
-                                  </div>
+                                  {log.amTimeOut && log.pmTimeIn ? (
+                                    <>
+                                      <div>
+                                        <span className="detail-lbl">Morning (AM):</span>{' '}
+                                        <strong>{new Date(log.timeIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(log.amTimeOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>
+                                      </div>
+                                      <div>
+                                        <span className="detail-lbl">Afternoon (PM):</span>{' '}
+                                        <strong>{new Date(log.pmTimeIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {log.timeOut ? new Date(log.timeOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'In progress...'}</strong>
+                                      </div>
+                                      <div>
+                                        <span className="detail-lbl">Lunch Break:</span>{' '}
+                                        <span>{new Date(log.amTimeOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to {new Date(log.pmTimeIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (Unpaid)</span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div>
+                                        <span className="detail-lbl">Time In:</span>{' '}
+                                        <strong>{new Date(log.timeIn).toLocaleTimeString()}</strong>
+                                      </div>
+                                      <div>
+                                        <span className="detail-lbl">Time Out:</span>{' '}
+                                        <strong>{log.timeOut ? new Date(log.timeOut).toLocaleTimeString() : 'In progress...'}</strong>
+                                      </div>
+                                      <div>
+                                        <span className="detail-lbl">Lunch Break:</span>{' '}
+                                        <span>{log.deductLunchBreak ? 'Auto-deducted 1h unpaid lunch' : 'No lunch deduction (Half Day)'}</span>
+                                      </div>
+                                    </>
+                                  )}
                                   <div className="log-action-buttons-right">
                                     <button
                                       type="button"

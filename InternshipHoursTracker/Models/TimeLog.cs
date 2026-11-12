@@ -14,6 +14,10 @@ public class TimeLog
 
     public DateTime TimeIn { get; set; }
 
+    public DateTime? AmTimeOut { get; set; }
+
+    public DateTime? PmTimeIn { get; set; }
+
     public DateTime? TimeOut { get; set; }
 
     public bool DeductLunchBreak { get; set; }
