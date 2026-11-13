@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5045/api'
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '548680570260-m6gedf8u8itm7209atn1q6iqok6lvpj7.apps.googleusercontent.com'
@@ -76,6 +76,29 @@ export default function App() {
 
   // Session Type Selector: 'full' | 'half-am' | 'half-pm'
   const [sessionMode, setSessionMode] = useState('full')
+  const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false)
+  const sessionDropdownRef = useRef(null)
+
+  const SESSION_OPTIONS = [
+    { id: 'full', title: 'Full Day', sub: 'AM + PM (-1h Lunch)' },
+    { id: 'half-am', title: 'Half Day (AM)', sub: 'Morning Only (No Lunch)' },
+    { id: 'half-pm', title: 'Half Day (PM)', sub: 'Afternoon Only (No Lunch)' }
+  ]
+  const currentSessionOption = SESSION_OPTIONS.find(o => o.id === sessionMode) || SESSION_OPTIONS[0]
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (sessionDropdownRef.current && !sessionDropdownRef.current.contains(e.target)) {
+        setSessionDropdownOpen(false)
+      }
+    }
+    if (sessionDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [sessionDropdownOpen])
 
   const [showManualForm, setShowManualForm] = useState(false)
   const [manualDate, setManualDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -1743,54 +1766,74 @@ export default function App() {
                   </div>
                 </form>
               )}
-              <div className="session-selector-grid">
+              <div className="session-dropdown-container" ref={sessionDropdownRef}>
                 <button
                   type="button"
-                  className={`session-option-card ${sessionMode === 'full' ? 'selected' : ''}`}
-                  onClick={() => setSessionMode('full')}
+                  className={`session-dropdown-trigger ${sessionDropdownOpen ? 'open' : ''}`}
+                  onClick={() => !isClockedIn && setSessionDropdownOpen(v => !v)}
+                  disabled={isClockedIn}
+                  aria-haspopup="listbox"
+                  aria-expanded={sessionDropdownOpen}
                 >
-                  <span className={`radio-circle ${sessionMode === 'full' ? 'checked' : ''}`}>
-                    {sessionMode === 'full' && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </span>
-                  <span className="session-option-title">Full Day</span>
-                  <span className="session-option-sub">AM + PM (-1h Lunch)</span>
+                  <div className="session-dropdown-trigger-text">
+                    <span className="session-dropdown-title">{currentSessionOption.title}</span>
+                    <span className="session-dropdown-sub">{currentSessionOption.sub}</span>
+                  </div>
+                  <svg
+                    className={`session-dropdown-chevron ${sessionDropdownOpen ? 'rotated' : ''}`}
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
                 </button>
 
-                <button
-                  type="button"
-                  className={`session-option-card ${sessionMode === 'half-am' ? 'selected' : ''}`}
-                  onClick={() => setSessionMode('half-am')}
-                >
-                  <span className={`radio-circle ${sessionMode === 'half-am' ? 'checked' : ''}`}>
-                    {sessionMode === 'half-am' && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </span>
-                  <span className="session-option-title">Half Day (AM)</span>
-                  <span className="session-option-sub">Morning Only (No Lunch)</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`session-option-card ${sessionMode === 'half-pm' ? 'selected' : ''}`}
-                  onClick={() => setSessionMode('half-pm')}
-                >
-                  <span className={`radio-circle ${sessionMode === 'half-pm' ? 'checked' : ''}`}>
-                    {sessionMode === 'half-pm' && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </span>
-                  <span className="session-option-title">Half Day (PM)</span>
-                  <span className="session-option-sub">Afternoon Only (No Lunch)</span>
-                </button>
+                {sessionDropdownOpen && (
+                  <div className="session-dropdown-menu" role="listbox">
+                    {SESSION_OPTIONS.map(opt => {
+                      const isSelected = opt.id === sessionMode
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          className={`session-dropdown-item ${isSelected ? 'selected' : ''}`}
+                          onClick={() => {
+                            setSessionMode(opt.id)
+                            setSessionDropdownOpen(false)
+                          }}
+                        >
+                          <div className="session-dropdown-item-text">
+                            <span className="session-dropdown-item-title">{opt.title}</span>
+                            <span className="session-dropdown-item-sub">{opt.sub}</span>
+                          </div>
+                          {isSelected && (
+                            <svg
+                              className="session-dropdown-check"
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="#3b82f6"
+                              strokeWidth="2.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               {!isClockedIn ? (

@@ -1098,6 +1098,151 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   margin-bottom: 1.25rem;
 }
 
+/* Custom Session Dropdown */
+.session-dropdown-container {
+  position: relative;
+  width: 100%;
+  margin-bottom: 1.25rem;
+}
+
+.session-dropdown-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(51, 65, 85, 0.75);
+  border-radius: 12px;
+  padding: 0.95rem 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+}
+
+.session-dropdown-trigger:hover {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.session-dropdown-trigger.open {
+  background: rgba(15, 23, 42, 0.95);
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4), 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.session-dropdown-trigger:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.session-dropdown-trigger-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.session-dropdown-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.session-dropdown-sub {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.session-dropdown-chevron {
+  color: #94a3b8;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.session-dropdown-chevron.rotated {
+  transform: rotate(180deg);
+  color: #3b82f6;
+}
+
+.session-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #0f172a;
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  border-radius: 12px;
+  padding: 0.45rem;
+  z-index: 60;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.4);
+  animation: dropdownFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.session-dropdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.82rem 1.05rem;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.session-dropdown-item:hover {
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.session-dropdown-item.selected {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.session-dropdown-item.selected:hover {
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.session-dropdown-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.session-dropdown-item-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.session-dropdown-item.selected .session-dropdown-item-title {
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.session-dropdown-item-sub {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.session-dropdown-check {
+  flex-shrink: 0;
+}
+
 .session-option-card {
   background: rgba(15, 23, 42, 0.45);
   border: 1px solid rgba(30, 41, 59, 0.85);
@@ -2023,6 +2168,56 @@ body.light-theme html {
   background: #f8fafc;
   border-color: #cbd5e1;
   color: #475569;
+}
+
+.app-shell.light-mode .session-dropdown-trigger {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.app-shell.light-mode .session-dropdown-trigger:hover {
+  background: #f8fafc;
+  border-color: #3b82f6;
+}
+
+.app-shell.light-mode .session-dropdown-trigger.open {
+  background: #ffffff;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.3), 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.app-shell.light-mode .session-dropdown-title {
+  color: #0f172a;
+}
+
+.app-shell.light-mode .session-dropdown-sub {
+  color: #64748b;
+}
+
+.app-shell.light-mode .session-dropdown-menu {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.app-shell.light-mode .session-dropdown-item:hover {
+  background: #f1f5f9;
+}
+
+.app-shell.light-mode .session-dropdown-item.selected {
+  background: #eff6ff;
+}
+
+.app-shell.light-mode .session-dropdown-item-title {
+  color: #0f172a;
+}
+
+.app-shell.light-mode .session-dropdown-item.selected .session-dropdown-item-title {
+  color: #2563eb;
+}
+
+.app-shell.light-mode .session-dropdown-item-sub {
+  color: #64748b;
 }
 
 .app-shell.light-mode .session-option-card.selected {
