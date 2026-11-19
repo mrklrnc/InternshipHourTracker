@@ -137,27 +137,42 @@ export default function App() {
   const [punchLoading, setPunchLoading] = useState(null) // 'in' | 'lunch-out' | 'lunch-in' | 'out' | null
   const [punchSuccess, setPunchSuccess] = useState(null) // 'in' | 'lunch-out' | 'lunch-in' | 'out' | null
 
+  const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ]
+
   // Time Log History Interactive Toolbar Filters
   const [historyFilter, setHistoryFilter] = useState('all') // 'all' | 'full' | 'half'
-  const [periodFilter, setPeriodFilter] = useState(() => {
-    return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const [rangeMode, setRangeMode] = useState('month') // 'month' | 'date'
+  const [fromMonth, setFromMonth] = useState(() => new Date().getMonth())
+  const [fromYear, setFromYear] = useState(() => new Date().getFullYear())
+  const [toMonth, setToMonth] = useState(() => new Date().getMonth())
+  const [toYear, setToYear] = useState(() => new Date().getFullYear())
+  const [dateFrom, setDateFrom] = useState(() => {
+    const now = new Date()
+    const pad = n => String(n).padStart(2, '0')
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
   })
-  const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false)
+  const [dateTo, setDateTo] = useState(() => {
+    const now = new Date()
+    const pad = n => String(n).padStart(2, '0')
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  })
   const [historySessionDropdownOpen, setHistorySessionDropdownOpen] = useState(false)
 
   // Click outside to close history dropdowns
   useEffect(() => {
     function handleClickOutside(e) {
       if (!e.target.closest('.history-filter-field')) {
-        setPeriodDropdownOpen(false)
         setHistorySessionDropdownOpen(false)
       }
     }
-    if (periodDropdownOpen || historySessionDropdownOpen) {
+    if (historySessionDropdownOpen) {
       window.addEventListener('click', handleClickOutside)
       return () => window.removeEventListener('click', handleClickOutside)
     }
-  }, [periodDropdownOpen, historySessionDropdownOpen])
+  }, [historySessionDropdownOpen])
 
   // Time Log Delete Warning State
   const [logToDelete, setLogToDelete] = useState(null)
@@ -865,35 +880,209 @@ export default function App() {
     }
   }
 
+  function matchesActiveRange(log) {
+    if (!log.timeIn) return false
+    const d = new Date(log.timeIn)
+    if (rangeMode === 'month') {
+      const ym = d.getFullYear() * 12 + d.getMonth()
+      const a = fromYear * 12 + fromMonth
+      const b = toYear * 12 + toMonth
+      return ym >= Math.min(a, b) && ym <= Math.max(a, b)
+    }
+    if (dateFrom && dateTo) {
+      const start = new Date(`${dateFrom}T00:00:00`)
+      const end = new Date(`${dateTo}T23:59:59.999`)
+      const lo = start <= end ? start : new Date(`${dateTo}T00:00:00`)
+      const hi = start <= end ? end : new Date(`${dateFrom}T23:59:59.999`)
+      return d >= lo && d <= hi
+    }
+    return true
+  }
+
+  function getActivePeriodBadgeLabel() {
+    if (rangeMode === 'month') {
+      const a = fromYear * 12 + fromMonth
+      const b = toYear * 12 + toMonth
+      const sMonth = a <= b ? fromMonth : toMonth
+      const sYear = a <= b ? fromYear : toYear
+      const eMonth = a <= b ? toMonth : fromMonth
+      const eYear = a <= b ? toYear : fromYear
+
+      if (sMonth === eMonth && sYear === eYear) {
+        return `${MONTH_NAMES[sMonth].toUpperCase()} ${sYear}`
+      }
+      if (sYear === eYear) {
+        return `${MONTH_NAMES[sMonth].slice(0, 3).toUpperCase()} – ${MONTH_NAMES[eMonth].slice(0, 3).toUpperCase()} ${sYear}`
+      }
+      return `${MONTH_NAMES[sMonth].slice(0, 3).toUpperCase()} ${sYear} – ${MONTH_NAMES[eMonth].slice(0, 3).toUpperCase()} ${eYear}`
+    }
+
+    if (dateFrom && dateTo) {
+      const d1 = new Date(`${dateFrom}T00:00:00`)
+      const d2 = new Date(`${dateTo}T00:00:00`)
+      const lo = d1 <= d2 ? d1 : d2
+      const hi = d1 <= d2 ? d2 : d1
+      const fmt = (dt, withYear) =>
+        dt.toLocaleDateString('en-US', withYear ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' }).toUpperCase()
+      if (lo.getTime() === hi.getTime()) return fmt(lo, true)
+      if (lo.getFullYear() === hi.getFullYear()) return `${fmt(lo, false)} – ${fmt(hi, true)}`
+      return `${fmt(lo, true)} – ${fmt(hi, true)}`
+    }
+    return 'ALL PERIODS'
+  }
+
   function handleExportPDF() {
-    const totalHrs = summary?.totalHoursLogged ?? 0
-    const goalHrs = summary?.targetHours ?? user.targetHours ?? 400
-    const remainingHrs = summary?.remainingHours ?? Math.max(0, goalHrs - totalHrs)
-    const completedDays = summary?.completedDays ?? Math.round((totalHrs / 8) * 10) / 10
-    const remainingDays = summary?.remainingDays ?? Math.round((remainingHrs / 8) * 10) / 10
+    const logsForExport = logs.filter(l => {
+      if (!matchesActiveRange(l)) return false
+      if (historyFilter === 'full') return l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full'))
+      if (historyFilter === 'half') return !(l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full')))
+      return true
+    })
 
-    const sortedLogs = [...logs].sort((a, b) => new Date(a.timeIn) - new Date(b.timeIn))
+    const sortedLogs = [...logsForExport].sort((a, b) => new Date(a.timeIn) - new Date(b.timeIn))
+    const periodLabel = getActivePeriodBadgeLabel()
+    const generatedDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const internName = user.fullName || user.username
+    const internEmail = user.email || `${user.username.toLowerCase()}@university.edu`
 
-    const rowsHtml = sortedLogs.map((log, index) => {
-      const dateStr = formatDateShort(log.timeIn)
-      const timeInStr = new Date(log.timeIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      const timeOutStr = log.timeOut
-        ? new Date(log.timeOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : 'In Progress'
-      const sessionStr = log.sessionType || (log.deductLunchBreak ? 'Full Day (-1h Lunch)' : 'Half Day (No Lunch)')
-      const lunchStr = log.deductLunchBreak ? '1.0 hr deducted' : 'None'
-      const hrs = Number(log.hoursLogged || 0).toFixed(2)
+    // Group logs by month (YYYY-MM) so each month prints on its own separated page
+    const monthGroups = []
+    const groupMap = new Map()
+    sortedLogs.forEach(log => {
+      const d = new Date(log.timeIn)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!groupMap.has(key)) {
+        const label = `${MONTH_NAMES[d.getMonth()].toUpperCase()} ${d.getFullYear()}`
+        const group = { key, label, logs: [] }
+        groupMap.set(key, group)
+        monthGroups.push(group)
+      }
+      groupMap.get(key).logs.push(log)
+    })
 
+    if (monthGroups.length === 0) {
+      monthGroups.push({ key: 'empty', label: periodLabel, logs: [] })
+    }
+
+    const pagesHtml = monthGroups.map((group, groupIdx) => {
+      const monthTotalHrs = group.logs.reduce((sum, l) => sum + Number(l.hoursLogged || 0), 0)
+      const rowsHtml = group.logs.map((log, index) => {
+        const dateStr = formatDateShort(log.timeIn)
+        const timeInStr = new Date(log.timeIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        const timeOutStr = log.timeOut
+          ? new Date(log.timeOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : 'In Progress'
+        const sessionStr = log.sessionType || (log.deductLunchBreak ? 'Full Day (-1h Lunch)' : 'Half Day (No Lunch)')
+        const lunchStr = log.deductLunchBreak ? '1.0 hr deducted' : 'None'
+        const hrs = Number(log.hoursLogged || 0).toFixed(2)
+
+        return `
+          <tr>
+            <td>${index + 1}</td>
+            <td>${dateStr}</td>
+            <td>${sessionStr}</td>
+            <td>${timeInStr}</td>
+            <td>${timeOutStr}</td>
+            <td>${lunchStr}</td>
+            <td style="font-weight:700; text-align:right;">${hrs} hrs</td>
+          </tr>
+        `
+      }).join('')
+
+      const rowCount = group.logs.length
+      const densityStyle =
+        rowCount <= 10
+          ? '--tbl-font: 13.5px; --th-pad: 10px 12px; --td-pad: 11px 12px; --td-lh: 1.4;'
+          : rowCount <= 18
+          ? '--tbl-font: 12.5px; --th-pad: 8px 10px; --td-pad: 8px 10px; --td-lh: 1.35;'
+          : rowCount <= 25
+          ? '--tbl-font: 11.5px; --th-pad: 7px 9px; --td-pad: 5.5px 9px; --td-lh: 1.3;'
+          : '--tbl-font: 11px; --th-pad: 6.5px 9px; --td-pad: 4.3px 9px; --td-lh: 1.3;'
+
+      const isLast = groupIdx === monthGroups.length - 1
       return `
-        <tr>
-          <td>${index + 1}</td>
-          <td>${dateStr}</td>
-          <td>${sessionStr}</td>
-          <td>${timeInStr}</td>
-          <td>${timeOutStr}</td>
-          <td>${lunchStr}</td>
-          <td style="font-weight:700; text-align:right;">${hrs} hrs</td>
-        </tr>
+        <div class="month-page ${isLast ? 'last-page' : ''}" style="${densityStyle}">
+          <div class="top-bar">
+            <div class="title-wrap">
+              <div class="title-accent"></div>
+              <div class="title-text">
+                <h1>INTERNSHIP DAILY TIME RECORD (DTR)</h1>
+                <div class="subtitle">REPORT</div>
+              </div>
+            </div>
+            <div class="period-pill">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              <span>${group.label}</span>
+            </div>
+          </div>
+
+          <div class="meta-bar">
+            <div class="meta-col">
+              <div class="meta-row">
+                <span class="meta-lbl">Intern Name:</span>
+                <span class="meta-val">${internName}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-lbl">Email:</span>
+                <span class="meta-val">${internEmail}</span>
+              </div>
+            </div>
+            <div class="meta-col right">
+              <div class="meta-row">
+                <span class="meta-lbl">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                  Date Generated:
+                </span>
+                <span class="meta-val">${generatedDateStr}</span>
+              </div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Session Type</th>
+                <th>Time In</th>
+                <th>Time Out</th>
+                <th>Lunch Break</th>
+                <th style="text-align:right;">Hours Logged</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="7" style="text-align:center; padding: 12px;">No sessions recorded for this period.</td></tr>'}
+            </tbody>
+          </table>
+
+          <div class="bottom-block">
+            <div class="total-bar">
+              <span class="total-label">TOTAL RENDERED INTERNSHIP HOURS:</span>
+              <span class="total-badge">${monthTotalHrs.toFixed(2)} hrs</span>
+            </div>
+
+            <div class="signatures">
+              <div class="sig-line">
+                <strong>${internName}</strong><br/>
+                Intern Signature Over Printed Name
+              </div>
+              <div class="sig-line">
+                <strong>Supervisor / Coordinator</strong><br/>
+                Authorized Signature & Date
+              </div>
+            </div>
+          </div>
+        </div>
       `
     }).join('')
 
@@ -907,94 +1096,44 @@ export default function App() {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Internship Time Log Report - ${user.fullName || user.username}</title>
+        <title>Internship DTR Report - ${internName} (${periodLabel})</title>
         <style>
-          * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; }
-          body { padding: 36px 44px; margin: 0; background: #fff; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1e293b; padding-bottom: 16px; margin-bottom: 24px; }
-          .header h1 { margin: 0 0 6px 0; font-size: 22px; color: #0f172a; }
-          .header p { margin: 2px 0; font-size: 13px; color: #475569; }
-          .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 26px; }
-          .summary-box { border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; background: #f8fafc; }
-          .summary-box .val { font-size: 20px; font-weight: 700; color: #1d4ed8; }
-          .summary-box .lbl { font-size: 12px; color: #64748b; margin-top: 2px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 36px; font-size: 13px; }
-          th { background: #1e293b !important; color: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: left; padding: 10px 12px; font-weight: 600; }
-          td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; }
-          tr:nth-child(even) td { background: #f8fafc; }
-          .total-row td { background: #eff6ff !important; font-weight: 700; border-top: 2px solid #1e293b; font-size: 14px; }
-          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: 56px; page-break-inside: avoid; }
-          .sig-line { border-top: 1px solid #334155; padding-top: 8px; text-align: center; font-size: 13px; color: #334155; }
+          * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; color: #111827; }
+          body { padding: 18px 26px; margin: 0; background: #fff; }
+          .month-page { page-break-after: always; break-after: page; display: flex; flex-direction: column; min-height: 262mm; }
+          .month-page.last-page { page-break-after: auto; break-after: auto; }
+          .top-bar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1.5px solid #cbd5e1; margin-bottom: 10px; gap: 12px; }
+          .title-wrap { display: flex; align-items: stretch; gap: 10px; }
+          .title-accent { width: 4.5px; background: #1f2937; border-radius: 3px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .title-text h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: 0.02em; color: #0f172a; }
+          .title-text .subtitle { margin-top: 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.35em; color: #475569; }
+          .period-pill { display: inline-flex; align-items: center; gap: 7px; background: #e5e7eb !important; border: 1px solid #d1d5db; border-radius: 7px; padding: 6px 13px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em; color: #111827; -webkit-print-color-adjust: exact; print-color-adjust: exact; white-space: nowrap; }
+          .meta-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+          .meta-col { display: flex; flex-direction: column; gap: 4px; }
+          .meta-col.right { border-left: 1px solid #cbd5e1; padding-left: 16px; justify-content: center; }
+          .meta-row { display: flex; align-items: center; gap: 6px; }
+          .meta-lbl { font-weight: 700; color: #111827; min-width: 92px; display: inline-flex; align-items: center; gap: 5px; }
+          .meta-val { color: #334155; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: var(--tbl-font, 11px); }
+          thead th { background: #262626 !important; color: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: left; padding: var(--th-pad, 6.5px 9px); font-weight: 700; }
+          thead th:first-child { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
+          thead th:last-child { border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
+          tbody td { padding: var(--td-pad, 4.3px 9px); border-bottom: 1px solid #e5e7eb; line-height: var(--td-lh, 1.3); }
+          tbody tr:nth-child(even) td { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .bottom-block { margin-top: auto; padding-top: 8px; page-break-inside: avoid; break-inside: avoid; }
+          .total-bar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 7px 0 4px; border-top: 1.5px solid #cbd5e1; margin-bottom: 18px; }
+          .total-label { font-size: 11.5px; font-weight: 800; letter-spacing: 0.03em; color: #111827; }
+          .total-badge { background: #262626 !important; color: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 5px 14px; border-radius: 7px; font-size: 12.5px; font-weight: 800; }
+          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; margin-top: 14px; }
+          .sig-line { border-top: 1.2px solid #334155; padding-top: 5px; text-align: center; font-size: 10.5px; color: #334155; }
           @media print {
-            body { padding: 15px; }
-            @page { margin: 15mm; }
+            body { padding: 0; }
+            @page { size: portrait; margin: 7mm 9mm; }
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          <div>
-            <h1>INTERNSHIP DAILY TIME RECORD (DTR) REPORT</h1>
-            <p><strong>Intern Name:</strong> ${user.fullName || user.username}</p>
-            <p><strong>Email:</strong> ${user.email || `${user.username.toLowerCase()}@university.edu`}</p>
-            <p><strong>Required Hours:</strong> ${goalHrs} Hours (${Math.round(goalHrs / 8)} Days @ 8h/day)</p>
-          </div>
-          <div style="text-align: right;">
-            <p><strong>Date Generated:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-            <p><strong>Total Sessions:</strong> ${logs.length}</p>
-          </div>
-        </div>
-
-        <div class="summary-grid">
-          <div class="summary-box">
-            <div class="val">${totalHrs} hrs</div>
-            <div class="lbl">Completed (${completedDays} days)</div>
-          </div>
-          <div class="summary-box">
-            <div class="val">${remainingHrs} hrs</div>
-            <div class="lbl">Remaining</div>
-          </div>
-          <div class="summary-box">
-            <div class="val">${remainingDays} days</div>
-            <div class="lbl">Days Left (8h/day)</div>
-          </div>
-          <div class="summary-box">
-            <div class="val">${goalHrs} hrs</div>
-            <div class="lbl">Target Requirement</div>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Date</th>
-              <th>Session Type</th>
-              <th>Time In</th>
-              <th>Time Out</th>
-              <th>Lunch Break</th>
-              <th style="text-align:right;">Hours Logged</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml || '<tr><td colspan="7" style="text-align:center;">No sessions recorded yet.</td></tr>'}
-            <tr class="total-row">
-              <td colspan="6" style="text-align:right;">TOTAL RENDERED INTERNSHIP HOURS:</td>
-              <td style="text-align:right;">${Number(totalHrs).toFixed(2)} hrs</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="signatures">
-          <div class="sig-line">
-            <strong>${user.fullName || user.username}</strong><br/>
-            Intern Signature Over Printed Name
-          </div>
-          <div class="sig-line">
-            <strong>Supervisor / Coordinator</strong><br/>
-            Authorized Signature & Date
-          </div>
-        </div>
+        ${pagesHtml}
 
         <script>
           window.onload = function() {
@@ -1453,25 +1592,17 @@ export default function App() {
   const fullLogsCount = logs.filter(l => l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full'))).length
   const halfLogsCount = logs.length - fullLogsCount
 
-  // Unique Periods (e.g. "November 2026") derived from logs
-  const availablePeriods = (() => {
-    const list = []
+  // Unique Years derived from logs + current year
+  const availableYears = (() => {
+    const yrs = new Set([new Date().getFullYear()])
     logs.forEach(l => {
-      if (l.timeIn) {
-        const p = new Date(l.timeIn).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-        if (!list.includes(p)) list.push(p)
-      }
+      if (l.timeIn) yrs.add(new Date(l.timeIn).getFullYear())
     })
-    const cur = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    if (!list.includes(cur)) list.unshift(cur)
-    return list
+    return Array.from(yrs).sort((a, b) => a - b)
   })()
 
   const filteredLogs = logs.filter(l => {
-    if (periodFilter !== 'all' && l.timeIn) {
-      const lPeriod = new Date(l.timeIn).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-      if (lPeriod !== periodFilter) return false
-    }
+    if (!matchesActiveRange(l)) return false
     if (historyFilter === 'full') return l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full'))
     if (historyFilter === 'half') return !(l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full')))
     return true
@@ -2251,75 +2382,49 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Interactive Toolbar: Period & Session type */}
-              <div className="history-filter-toolbar">
-                <div className="history-filter-field">
-                  <label className="history-filter-label">Period</label>
-                  <div className="history-dropdown-wrapper">
-                    <button
-                      type="button"
-                      className={`history-dropdown-trigger ${periodDropdownOpen ? 'open' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setHistorySessionDropdownOpen(false);
-                        setPeriodDropdownOpen(v => !v);
-                      }}
-                    >
-                      <span className="history-dropdown-selected">
-                        {periodFilter === 'all' ? 'All periods' : periodFilter}
-                      </span>
-                      <svg className={`history-chevron ${periodDropdownOpen ? 'rotated' : ''}`} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </button>
-
-                    {periodDropdownOpen && (
-                      <div className="history-dropdown-menu">
-                        <button
-                          type="button"
-                          className={`history-dropdown-option ${periodFilter === 'all' ? 'active' : ''}`}
-                          onClick={() => {
-                            setPeriodFilter('all');
-                            setPeriodDropdownOpen(false);
-                            setCurrentPage(1);
-                          }}
-                        >
-                          <span className="history-option-check">
-                            {periodFilter === 'all' ? '✓' : ''}
-                          </span>
-                          <span>All periods</span>
-                        </button>
-                        {availablePeriods.map(period => (
-                          <button
-                            key={period}
-                            type="button"
-                            className={`history-dropdown-option ${periodFilter === period ? 'active' : ''}`}
-                            onClick={() => {
-                              setPeriodFilter(period);
-                              setPeriodDropdownOpen(false);
-                              setCurrentPage(1);
-                            }}
-                          >
-                            <span className="history-option-check">
-                              {periodFilter === period ? '✓' : ''}
-                            </span>
-                            <span>{period}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+              {/* Interactive Toolbar: Range Mode Toggle + Session Type */}
+              <div className="history-controls-top">
+                <div className="range-mode-toggle" role="tablist" aria-label="Filter range mode">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={rangeMode === 'month'}
+                    className={`range-mode-btn ${rangeMode === 'month' ? 'active' : ''}`}
+                    onClick={() => { setRangeMode('month'); setCurrentPage(1); }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <span>Month Range</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={rangeMode === 'date'}
+                    className={`range-mode-btn ${rangeMode === 'date' ? 'active' : ''}`}
+                    onClick={() => { setRangeMode('date'); setCurrentPage(1); }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                      <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
+                    </svg>
+                    <span>Date Range</span>
+                  </button>
                 </div>
 
-                <div className="history-filter-field">
-                  <label className="history-filter-label">Session type</label>
+                <div className="history-filter-field history-session-compact">
                   <div className="history-dropdown-wrapper">
                     <button
                       type="button"
                       className={`history-dropdown-trigger ${historySessionDropdownOpen ? 'open' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setPeriodDropdownOpen(false);
                         setHistorySessionDropdownOpen(v => !v);
                       }}
                     >
@@ -2380,6 +2485,127 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Range Pickers: Month Range or Date Range */}
+              {rangeMode === 'month' ? (
+                <div className="history-range-grid">
+                  <div className="history-range-card">
+                    <div className="history-range-card-title">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                      <span>From</span>
+                    </div>
+                    <div className="history-month-year-row">
+                      <div>
+                        <label>Month</label>
+                        <select
+                          className="history-range-select"
+                          value={fromMonth}
+                          onChange={e => { setFromMonth(Number(e.target.value)); setCurrentPage(1); }}
+                        >
+                          {MONTH_NAMES.map((m, idx) => (
+                            <option key={m} value={idx}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label>Year</label>
+                        <select
+                          className="history-range-select"
+                          value={fromYear}
+                          onChange={e => { setFromYear(Number(e.target.value)); setCurrentPage(1); }}
+                        >
+                          {availableYears.map(y => (
+                            <option key={y} value={y}>{y}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="history-range-card">
+                    <div className="history-range-card-title">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                      <span>To</span>
+                    </div>
+                    <div className="history-month-year-row">
+                      <div>
+                        <label>Month</label>
+                        <select
+                          className="history-range-select"
+                          value={toMonth}
+                          onChange={e => { setToMonth(Number(e.target.value)); setCurrentPage(1); }}
+                        >
+                          {MONTH_NAMES.map((m, idx) => (
+                            <option key={m} value={idx}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label>Year</label>
+                        <select
+                          className="history-range-select"
+                          value={toYear}
+                          onChange={e => { setToYear(Number(e.target.value)); setCurrentPage(1); }}
+                        >
+                          {availableYears.map(y => (
+                            <option key={y} value={y}>{y}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="history-range-grid">
+                  <div className="history-range-card">
+                    <div className="history-range-card-title">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                      <span>Date From</span>
+                    </div>
+                    <input
+                      type="date"
+                      className="history-range-date-input"
+                      value={dateFrom}
+                      onClick={e => e.target.showPicker && e.target.showPicker()}
+                      onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }}
+                    />
+                  </div>
+
+                  <div className="history-range-card">
+                    <div className="history-range-card-title">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                      <span>Date To</span>
+                    </div>
+                    <input
+                      type="date"
+                      className="history-range-date-input"
+                      value={dateTo}
+                      onClick={e => e.target.showPicker && e.target.showPicker()}
+                      onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {logs.length === 0 ? (
                 <p className="empty-state">No time logs recorded yet. Start a session above!</p>
