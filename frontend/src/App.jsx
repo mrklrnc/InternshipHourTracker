@@ -133,6 +133,44 @@ export default function App() {
     return saved !== null ? JSON.parse(saved) : true
   })
 
+  // Attendance Punch Micro-interaction States
+  const [punchLoading, setPunchLoading] = useState(null) // 'in' | 'lunch-out' | 'lunch-in' | 'out' | null
+  const [punchSuccess, setPunchSuccess] = useState(null) // 'in' | 'lunch-out' | 'lunch-in' | 'out' | null
+
+  // Time Log History Interactive Toolbar Filters
+  const [historyFilter, setHistoryFilter] = useState('all') // 'all' | 'full' | 'half'
+  const [periodFilter, setPeriodFilter] = useState(() => {
+    return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  })
+  const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false)
+  const [historySessionDropdownOpen, setHistorySessionDropdownOpen] = useState(false)
+
+  // Click outside to close history dropdowns
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (!e.target.closest('.history-filter-field')) {
+        setPeriodDropdownOpen(false)
+        setHistorySessionDropdownOpen(false)
+      }
+    }
+    if (periodDropdownOpen || historySessionDropdownOpen) {
+      window.addEventListener('click', handleClickOutside)
+      return () => window.removeEventListener('click', handleClickOutside)
+    }
+  }, [periodDropdownOpen, historySessionDropdownOpen])
+
+  // Time Log Delete Warning State
+  const [logToDelete, setLogToDelete] = useState(null)
+  const [deletingLog, setDeletingLog] = useState(false)
+
+  // Auto-dismiss success notification
+  useEffect(() => {
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(''), 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [successMsg])
+
   // Quick Edit Target & Shift States for Dashboard Cards
   const [showEditTarget, setShowEditTarget] = useState(false)
   const [newTargetHoursInput, setNewTargetHoursInput] = useState(400)
@@ -599,48 +637,63 @@ export default function App() {
   }
 
   async function handleTimeIn(sessionLabel) {
-    if (!user) return
+    if (!user || punchLoading) return
     setError('')
+    setPunchLoading('in')
     try {
       const res = await fetch(
         `${API_BASE}/timelogs/time-in/${user.id}?sessionType=${encodeURIComponent(sessionLabel)}`,
         { method: 'POST', headers: getAuthHeaders() }
       )
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(data.message || 'Action failed')
+        setPunchLoading(null)
       } else {
         await fetchDashboard(user.id)
+        setPunchLoading(null)
+        setPunchSuccess('in')
+        setSuccessMsg('Successfully clocked in! Have a productive shift.')
+        setTimeout(() => setPunchSuccess(null), 1400)
       }
     } catch {
       setError('Failed to reach backend API.')
+      setPunchLoading(null)
     }
   }
 
   async function handleTimeOut(shouldDeductLunch = false) {
-    if (!user) return
+    if (!user || punchLoading) return
     setError('')
+    setPunchLoading('out')
     const tzOffset = new Date().getTimezoneOffset()
     try {
       const res = await fetch(
         `${API_BASE}/timelogs/time-out/${user.id}?deductLunch=${shouldDeductLunch}&tzOffsetMinutes=${tzOffset}`,
         { method: 'POST', headers: getAuthHeaders() }
       )
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(data.message || 'Action failed')
+        setPunchLoading(null)
       } else {
         setLiveDeductLunch(false)
         await fetchDashboard(user.id)
+        setPunchLoading(null)
+        setPunchSuccess('out')
+        setSuccessMsg('Successfully clocked out! Great work today.')
+        setTimeout(() => setPunchSuccess(null), 1400)
       }
     } catch {
       setError('Failed to reach backend API.')
+      setPunchLoading(null)
     }
   }
 
   async function handleLunchOut() {
-    if (!user) return
+    if (!user || punchLoading) return
     setError('')
+    setPunchLoading('lunch-out')
     const tzOffset = new Date().getTimezoneOffset()
     try {
       const res = await fetch(
@@ -650,17 +703,24 @@ export default function App() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(data.message || 'Failed to record lunch time-out.')
+        setPunchLoading(null)
       } else {
         await fetchDashboard(user.id)
+        setPunchLoading(null)
+        setPunchSuccess('lunch-out')
+        setSuccessMsg('Lunch break started. Enjoy your meal!')
+        setTimeout(() => setPunchSuccess(null), 1400)
       }
     } catch {
       setError('Failed to reach backend API.')
+      setPunchLoading(null)
     }
   }
 
   async function handleLunchIn() {
-    if (!user) return
+    if (!user || punchLoading) return
     setError('')
+    setPunchLoading('lunch-in')
     const tzOffset = new Date().getTimezoneOffset()
     try {
       const res = await fetch(
@@ -670,11 +730,17 @@ export default function App() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(data.message || 'Failed to record return from lunch.')
+        setPunchLoading(null)
       } else {
         await fetchDashboard(user.id)
+        setPunchLoading(null)
+        setPunchSuccess('lunch-in')
+        setSuccessMsg('Welcome back! Afternoon shift resumed.')
+        setTimeout(() => setPunchSuccess(null), 1400)
       }
     } catch {
       setError('Failed to reach backend API.')
+      setPunchLoading(null)
     }
   }
 
@@ -708,6 +774,7 @@ export default function App() {
       if (res.ok) {
         setShowManualForm(false)
         await fetchDashboard(user.id)
+        setSuccessMsg('Manual time log session added successfully!')
       } else {
         setError(data.message || 'Invalid session timestamps.')
       }
@@ -716,12 +783,32 @@ export default function App() {
     }
   }
 
-  async function handleDeleteLog(id) {
-    await fetch(`${API_BASE}/timelogs/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    })
-    await fetchDashboard(user.id)
+  async function confirmDeleteLog() {
+    if (!logToDelete || deletingLog) return
+    setError('')
+    setDeletingLog(true)
+    try {
+      const res = await fetch(`${API_BASE}/timelogs/${logToDelete.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+      if (res.ok) {
+        const deletedDate = formatDateShort(logToDelete.timeIn)
+        setLogToDelete(null)
+        setExpandedLogId(null)
+        await fetchDashboard(user.id)
+        setSuccessMsg(`Time log for ${deletedDate} deleted successfully.`)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setError(data.message || 'Failed to delete time log.')
+        setLogToDelete(null)
+      }
+    } catch {
+      setError('Failed to reach backend API.')
+      setLogToDelete(null)
+    } finally {
+      setDeletingLog(false)
+    }
   }
 
   function startEditLog(log) {
@@ -768,6 +855,7 @@ export default function App() {
       if (res.ok) {
         setEditingLogId(null)
         await fetchDashboard(user.id)
+        setSuccessMsg(`Time log for ${formatDateShort(timeInIso)} updated successfully!`)
       } else {
         const data = await res.json().catch(() => ({}))
         setError(data.message || 'Failed to update time log.')
@@ -1362,10 +1450,37 @@ export default function App() {
   const circumference = 2 * Math.PI * radius
   const strokeDashoffset = circumference - (Math.min(100, Math.max(4, pct)) / 100) * circumference
 
-  const totalPages = Math.max(1, Math.ceil(logs.length / LOGS_PER_PAGE))
+  const fullLogsCount = logs.filter(l => l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full'))).length
+  const halfLogsCount = logs.length - fullLogsCount
+
+  // Unique Periods (e.g. "November 2026") derived from logs
+  const availablePeriods = (() => {
+    const list = []
+    logs.forEach(l => {
+      if (l.timeIn) {
+        const p = new Date(l.timeIn).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        if (!list.includes(p)) list.push(p)
+      }
+    })
+    const cur = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    if (!list.includes(cur)) list.unshift(cur)
+    return list
+  })()
+
+  const filteredLogs = logs.filter(l => {
+    if (periodFilter !== 'all' && l.timeIn) {
+      const lPeriod = new Date(l.timeIn).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      if (lPeriod !== periodFilter) return false
+    }
+    if (historyFilter === 'full') return l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full'))
+    if (historyFilter === 'half') return !(l.deductLunchBreak || (l.sessionType && l.sessionType.toLowerCase().includes('full')))
+    return true
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / LOGS_PER_PAGE))
   const safePage = Math.min(currentPage, totalPages)
   const startIndex = (safePage - 1) * LOGS_PER_PAGE
-  const visibleLogs = logs.slice(startIndex, startIndex + LOGS_PER_PAGE)
+  const visibleLogs = filteredLogs.slice(startIndex, startIndex + LOGS_PER_PAGE)
 
   const displayFullName = user.fullName || user.username
   const displayHandle = `@${(user.username || 'intern').toLowerCase().replace(/\s+/g, '')}`
@@ -1441,14 +1556,29 @@ export default function App() {
 
       {/* PAGE CONTENT CONTAINER */}
       <div className="web-dashboard">
-        {error && <div className="error-banner">{error}</div>}
-        {successMsg && <div className="success-banner">{successMsg}</div>}
+        {error && (
+          <div className="error-banner">
+            <span>{error}</span>
+            <button type="button" className="banner-close-btn" onClick={() => setError('')} title="Dismiss">✕</button>
+          </div>
+        )}
+        {successMsg && (
+          <div className="success-banner">
+            <div className="banner-content">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>{successMsg}</span>
+            </div>
+            <button type="button" className="banner-close-btn" onClick={() => setSuccessMsg('')} title="Dismiss">✕</button>
+          </div>
+        )}
 
         {/* ==========================================
             TAB 1: DASHBOARD VIEW
             ========================================== */}
         {activeNav === 'dashboard' && (
-          <>
+          <div key="dashboard" className="tab-page-transition unified-dashboard-stack">
             <header className="card topbar-card">
               <div className="topbar-user-info">
                 <h1>Internship Hours Tracker</h1>
@@ -1838,57 +1968,78 @@ export default function App() {
 
               {!isClockedIn ? (
                 <div className="wide-action-stack">
-                  {(sessionMode === 'full' || sessionMode === 'half-am') && (
+                  {punchSuccess === 'in' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-success" disabled>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Clocked In</span>
+                    </button>
+                  ) : punchLoading === 'in' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-loading" disabled>
+                      <span className="punch-spinner" />
+                      <span>Clocking in...</span>
+                    </button>
+                  ) : (
                     <button
                       type="button"
                       onClick={() =>
                         handleTimeIn(
                           sessionMode === 'half-am'
                             ? 'Half Day (AM - No Lunch)'
+                            : sessionMode === 'half-pm'
+                            ? 'Half Day (PM - No Lunch)'
                             : 'Full Day (AM + PM)'
                         )
                       }
-                      className="wide-btn sapphire-primary-btn"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <polygon points="5 3 19 12 5 21 5 3" />
-                      </svg>
-                      <span>
-                        {sessionMode === 'half-am' ? 'Morning Time In (Half Day AM)' : 'Morning Time In (AM)'}
-                      </span>
-                    </button>
-                  )}
-
-                  {sessionMode === 'half-pm' && (
-                    <button
-                      type="button"
-                      onClick={() => handleTimeIn('Half Day (PM - No Lunch)')}
-                      className="wide-btn sapphire-primary-btn"
+                      className="wide-btn punch-btn punch-state-default"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
+                        <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" />
                       </svg>
-                      <span>Afternoon Time In (Half Day PM)</span>
+                      <span>
+                        {sessionMode === 'half-am'
+                          ? 'Morning Time In (Half Day AM)'
+                          : sessionMode === 'half-pm'
+                          ? 'Afternoon Time In (Half Day PM)'
+                          : 'Morning Time In (AM)'}
+                      </span>
                     </button>
                   )}
                 </div>
               ) : isOnLunch ? (
                 <div className="wide-action-stack">
-                  <button
-                    type="button"
-                    onClick={handleLunchIn}
-                    className="wide-btn sapphire-primary-btn"
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>
-                    <span>Back from Lunch (PM Time In)</span>
-                  </button>
+                  {punchSuccess === 'lunch-in' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-success" disabled>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Back on Duty</span>
+                    </button>
+                  ) : punchLoading === 'lunch-in' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-loading" disabled>
+                      <span className="punch-spinner" />
+                      <span>Resuming shift...</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleLunchIn}
+                      className="wide-btn punch-btn punch-state-default"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" />
+                      </svg>
+                      <span>Back from Lunch (PM Time In)</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleTimeOut(false)}
                     className="wide-btn slate-ghost-btn"
+                    disabled={punchLoading !== null}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -1900,51 +2051,96 @@ export default function App() {
                 </div>
               ) : isAfternoonActive ? (
                 <div className="wide-action-stack">
-                  <button
-                    type="button"
-                    onClick={() => handleTimeOut(false)}
-                    className="wide-btn sapphire-primary-btn"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                      <polyline points="16 17 21 12 16 7" />
-                      <line x1="21" x2="9" y1="12" y2="12" />
-                    </svg>
-                    <span>End of Shift Time Out (PM Out)</span>
-                  </button>
+                  {punchSuccess === 'out' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-success" disabled>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Shift Completed</span>
+                    </button>
+                  ) : punchLoading === 'out' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-loading" disabled>
+                      <span className="punch-spinner" />
+                      <span>Clocking out...</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleTimeOut(false)}
+                      className="wide-btn punch-btn punch-state-default"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" x2="9" y1="12" y2="12" />
+                      </svg>
+                      <span>End of Shift Time Out (PM Out)</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="wide-action-stack">
                   {sessionMode === 'full' && (
+                    punchSuccess === 'lunch-out' ? (
+                      <button type="button" className="wide-btn punch-btn punch-state-success" disabled>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>Lunch Started</span>
+                      </button>
+                    ) : punchLoading === 'lunch-out' ? (
+                      <button type="button" className="wide-btn slate-ghost-btn punch-state-loading" disabled>
+                        <span className="punch-spinner" />
+                        <span>Recording lunch break...</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleLunchOut}
+                        className="wide-btn slate-ghost-btn"
+                        disabled={punchLoading !== null}
+                      >
+                        {/* Coffee Cup Icon */}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+                          <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+                          <line x1="6" x2="6" y1="2" y2="4" />
+                          <line x1="10" x2="10" y1="2" y2="4" />
+                          <line x1="14" x2="14" y1="2" y2="4" />
+                        </svg>
+                        <span>Time Out for Lunch (AM Out)</span>
+                      </button>
+                    )
+                  )}
+
+                  {punchSuccess === 'out' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-success" disabled>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Shift Completed</span>
+                    </button>
+                  ) : punchLoading === 'out' ? (
+                    <button type="button" className="wide-btn punch-btn punch-state-loading" disabled>
+                      <span className="punch-spinner" />
+                      <span>Clocking out...</span>
+                    </button>
+                  ) : (
                     <button
                       type="button"
-                      onClick={handleLunchOut}
-                      className="wide-btn slate-ghost-btn"
+                      onClick={() => handleTimeOut(liveDeductLunch)}
+                      className="wide-btn punch-btn punch-state-default"
                     >
-                      {/* Coffee Cup Icon */}
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
-                        <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
-                        <line x1="6" x2="6" y1="2" y2="4" />
-                        <line x1="10" x2="10" y1="2" y2="4" />
-                        <line x1="14" x2="14" y1="2" y2="4" />
+                      {/* Clock-Out / Exit Icon */}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" x2="9" y1="12" y2="12" />
                       </svg>
-                      <span>Time Out for Lunch (AM Out)</span>
+                      <span>End of Shift Time Out</span>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleTimeOut(liveDeductLunch)}
-                    className="wide-btn sapphire-primary-btn"
-                  >
-                    {/* Clock-Out / Exit Icon */}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                      <polyline points="16 17 21 12 16 7" />
-                      <line x1="21" x2="9" y1="12" y2="12" />
-                    </svg>
-                    <span>End of Shift Time Out</span>
-                  </button>
+
                   {sessionMode === 'full' && (
                     <label className="checkbox-row" style={{ marginTop: '0.4rem' }}>
                       <input
@@ -2036,10 +2232,7 @@ export default function App() {
 
             <section className="card history-section-card">
               <div className="history-card-header">
-                <div className="history-title-group">
-                  <h2>Time Log History</h2>
-                  <span className="sessions-count-pill">{logs.length} sessions</span>
-                </div>
+                <h2>Time Log History</h2>
 
                 <div className="history-actions-group">
                   <button
@@ -2051,15 +2244,147 @@ export default function App() {
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" x2="12" y1="15" y2="3" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    <span>Export PDF Report</span>
+                    <span>Export PDF</span>
                   </button>
+                </div>
+              </div>
+
+              {/* Interactive Toolbar: Period & Session type */}
+              <div className="history-filter-toolbar">
+                <div className="history-filter-field">
+                  <label className="history-filter-label">Period</label>
+                  <div className="history-dropdown-wrapper">
+                    <button
+                      type="button"
+                      className={`history-dropdown-trigger ${periodDropdownOpen ? 'open' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setHistorySessionDropdownOpen(false);
+                        setPeriodDropdownOpen(v => !v);
+                      }}
+                    >
+                      <span className="history-dropdown-selected">
+                        {periodFilter === 'all' ? 'All periods' : periodFilter}
+                      </span>
+                      <svg className={`history-chevron ${periodDropdownOpen ? 'rotated' : ''}`} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+
+                    {periodDropdownOpen && (
+                      <div className="history-dropdown-menu">
+                        <button
+                          type="button"
+                          className={`history-dropdown-option ${periodFilter === 'all' ? 'active' : ''}`}
+                          onClick={() => {
+                            setPeriodFilter('all');
+                            setPeriodDropdownOpen(false);
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <span className="history-option-check">
+                            {periodFilter === 'all' ? '✓' : ''}
+                          </span>
+                          <span>All periods</span>
+                        </button>
+                        {availablePeriods.map(period => (
+                          <button
+                            key={period}
+                            type="button"
+                            className={`history-dropdown-option ${periodFilter === period ? 'active' : ''}`}
+                            onClick={() => {
+                              setPeriodFilter(period);
+                              setPeriodDropdownOpen(false);
+                              setCurrentPage(1);
+                            }}
+                          >
+                            <span className="history-option-check">
+                              {periodFilter === period ? '✓' : ''}
+                            </span>
+                            <span>{period}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="history-filter-field">
+                  <label className="history-filter-label">Session type</label>
+                  <div className="history-dropdown-wrapper">
+                    <button
+                      type="button"
+                      className={`history-dropdown-trigger ${historySessionDropdownOpen ? 'open' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPeriodDropdownOpen(false);
+                        setHistorySessionDropdownOpen(v => !v);
+                      }}
+                    >
+                      <span className="history-dropdown-selected">
+                        {historyFilter === 'all' ? 'All sessions' : historyFilter === 'full' ? 'Full day' : 'Half day'}
+                      </span>
+                      <svg className={`history-chevron ${historySessionDropdownOpen ? 'rotated' : ''}`} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+
+                    {historySessionDropdownOpen && (
+                      <div className="history-dropdown-menu">
+                        <button
+                          type="button"
+                          className={`history-dropdown-option ${historyFilter === 'all' ? 'active' : ''}`}
+                          onClick={() => {
+                            setHistoryFilter('all');
+                            setHistorySessionDropdownOpen(false);
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <span className="history-option-check">
+                            {historyFilter === 'all' ? '✓' : ''}
+                          </span>
+                          <span>All sessions</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`history-dropdown-option ${historyFilter === 'full' ? 'active' : ''}`}
+                          onClick={() => {
+                            setHistoryFilter('full');
+                            setHistorySessionDropdownOpen(false);
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <span className="history-option-check">
+                            {historyFilter === 'full' ? '✓' : ''}
+                          </span>
+                          <span>Full day</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`history-dropdown-option ${historyFilter === 'half' ? 'active' : ''}`}
+                          onClick={() => {
+                            setHistoryFilter('half');
+                            setHistorySessionDropdownOpen(false);
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <span className="history-option-check">
+                            {historyFilter === 'half' ? '✓' : ''}
+                          </span>
+                          <span>Half day</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {logs.length === 0 ? (
                 <p className="empty-state">No time logs recorded yet. Start a session above!</p>
+              ) : filteredLogs.length === 0 ? (
+                <p className="empty-state">No sessions match the selected filter criteria.</p>
               ) : (
                 <>
                   <div className="history-rows-list">
@@ -2219,7 +2544,7 @@ export default function App() {
                                     <button
                                       type="button"
                                       className="delete-inline-btn"
-                                      onClick={() => handleDeleteLog(log.id)}
+                                      onClick={() => setLogToDelete(log)}
                                     >
                                       Delete Log
                                     </button>
@@ -2272,14 +2597,14 @@ export default function App() {
                 </>
               )}
             </section>
-          </>
+          </div>
         )}
 
         {/* ==========================================
             TAB 2: PROFILE VIEW
             ========================================== */}
         {activeNav === 'profile' && (
-          <div className="subpage-container">
+          <div key="profile" className="tab-page-transition subpage-container">
             <h1 className="subpage-title">My Profile</h1>
 
             <div className="card profile-hero-card">
@@ -2412,7 +2737,7 @@ export default function App() {
             TAB 3: SETTINGS VIEW
             ========================================== */}
         {activeNav === 'settings' && (
-          <div className="subpage-container">
+          <div key="settings" className="tab-page-transition subpage-container">
             <h1 className="subpage-title" style={{ marginBottom: '0.25rem' }}>Settings</h1>
             <p className="subpage-subtitle">Manage your account security and preferences.</p>
 
@@ -2509,6 +2834,56 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* DELETE CONFIRMATION WARNING MODAL */}
+      {logToDelete && (
+        <div className="modal-backdrop" onClick={() => !deletingLog && setLogToDelete(null)}>
+          <div className="delete-warning-modal" onClick={e => e.stopPropagation()}>
+            <div className="delete-warning-header">
+              <div className="warning-icon-badge">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="delete-warning-title">Delete Time Log Session?</h3>
+                <span className="delete-warning-subtitle">Permanent action — cannot be undone</span>
+              </div>
+            </div>
+
+            <div className="delete-warning-body">
+              <p>
+                Are you sure you want to permanently delete the time log for{' '}
+                <strong>{formatDateShort(logToDelete.timeIn)}</strong> ({Number(logToDelete.hoursLogged || 0).toFixed(1)} hrs)?
+              </p>
+              <div className="delete-warning-box">
+                <span className="warning-note">⚠️ Warning:</span> Logged hours ({Number(logToDelete.hoursLogged || 0).toFixed(1)} hrs) will be deducted from your total progress and internship completion targets.
+              </div>
+            </div>
+
+            <div className="delete-warning-actions">
+              <button
+                type="button"
+                className="cancel-btn-modal"
+                onClick={() => setLogToDelete(null)}
+                disabled={deletingLog}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-delete-btn"
+                onClick={confirmDeleteLog}
+                disabled={deletingLog}
+              >
+                {deletingLog ? 'Deleting...' : 'Yes, Delete Session'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
