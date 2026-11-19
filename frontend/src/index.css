@@ -456,58 +456,13 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 /* ==========================================
-   UNIFIED DASHBOARD STACK (NO SPACING BETWEEN SECTIONS)
+   DASHBOARD SECTIONS STACK (SPACED CARDS)
    ========================================== */
 .unified-dashboard-stack {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 1.25rem;
   width: 100%;
-}
-
-.unified-dashboard-stack > .card,
-.unified-dashboard-stack > header,
-.unified-dashboard-stack > section {
-  margin: 0;
-  border-radius: 0;
-  border: 1px solid rgba(30, 41, 59, 0.85);
-  border-top: none;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(8px);
-  box-shadow: none;
-}
-
-.unified-dashboard-stack > *:first-child {
-  border-top: 1px solid rgba(30, 41, 59, 0.85) !important;
-  border-top-left-radius: 16px !important;
-  border-top-right-radius: 16px !important;
-}
-
-.unified-dashboard-stack > *:last-child {
-  border-bottom-left-radius: 16px !important;
-  border-bottom-right-radius: 16px !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-}
-
-.unified-dashboard-stack > .card:not(:first-child):hover {
-  border-top: none;
-}
-
-/* Light mode overrides for unified dashboard */
-.app-shell.light-mode .unified-dashboard-stack > .card,
-.app-shell.light-mode .unified-dashboard-stack > header,
-.app-shell.light-mode .unified-dashboard-stack > section {
-  background: #ffffff;
-  border-color: #e2e8f0;
-  backdrop-filter: none;
-}
-
-.app-shell.light-mode .unified-dashboard-stack > *:first-child {
-  border-top-color: #e2e8f0 !important;
-}
-
-.app-shell.light-mode .unified-dashboard-stack > *:last-child {
-  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
 }
 
 .topbar-card {
@@ -3354,6 +3309,10 @@ body.light-theme html {
 
   .web-dashboard {
     padding: 1.15rem 0.85rem 3rem;
+    gap: 1rem;
+  }
+
+  .unified-dashboard-stack {
     gap: 1rem;
   }
 
